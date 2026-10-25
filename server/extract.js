@@ -5,7 +5,7 @@
 import * as cheerio from 'cheerio';
 import { safeFetch } from './net.js';
 import { parseName, splitAuthors, parseDate, cleanText, today, looksLikeOrg } from './names.js';
-import { lookupDoi, lookupIsbn, lookupArxiv, lookupPmid, lookupPmc, lookupPii, validIsbn, getJSON, prune, googleBookToCsl } from './lookup.js';
+import { lookupDoi, lookupIsbn, lookupArxiv, lookupPmid, lookupPmc, lookupPii, findByTitle, validIsbn, getJSON, prune, googleBookToCsl } from './lookup.js';
 
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -591,7 +591,10 @@ export async function citeUrl(inputUrl) {
     if (urlDoi) { try { return { item: mergeScholarly({ URL: cleanUrl(url) }, await lookupDoi(urlDoi)), source: 'DOI' }; } catch {} }
     const ts = await viaTranslationServer(url);
     if (ts) return { item: ts, source: 'Zotero translator' };
-    return { item: fromUrlOnly(url), source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`] };
+    // Blocked, but the link often contains the title (ResearchGate, Academia…): look it up
+    const guess = fromUrlOnly(url);
+    try { const found = await findByTitle(guess.title); if (found) return { item: found, source: 'DOI' }; } catch {}
+    return { item: guess, source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`] };
   }
 
   let result;

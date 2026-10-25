@@ -58,6 +58,8 @@ const CROSSREF_TYPES = {
 function crossrefName(a) {
   if (a.name && !a.family) return { literal: cleanText(a.name) };
   const n = { family: cleanText(a.family || ''), given: cleanText(a.given || '') };
+  // Publishers sometimes file initials as the surname ("M.V." / given "Varkey") — swap them back
+  if (/^(\p{Lu}\.?\s?){1,3}$/u.test(n.family) && /^\p{Lu}\p{Ll}{2,}$/u.test(n.given)) [n.family, n.given] = [n.given, n.family.replace(/\.?$/, '.').replace(/\.(?=\p{Lu})/gu, '. ')];
   if (a.suffix) n.suffix = a.suffix;
   return n;
 }
@@ -139,6 +141,22 @@ export async function lookupPii(pii) {
   const doi = r.message?.items?.[0]?.DOI;
   if (!doi) throw new Error('Article not found');
   return lookupDoi(doi);
+}
+
+// Find a published work by its title — only accepts a near-exact match, so a
+// guessed title never turns into the wrong paper.
+const titleWords = t => String(t || '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(w => w.length > 1);
+export async function findByTitle(title) {
+  const want = titleWords(title);
+  if (want.length < 4) return null;
+  const r = await getJSON(`https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(title)}&rows=5&select=DOI,title,subtitle`);
+  for (const w of r.message?.items || []) {
+    const got = titleWords([first(w.title), first(w.subtitle)].filter(Boolean).join(' '));
+    const a = new Set(want), b = new Set(got);
+    const overlap = [...a].filter(x => b.has(x)).length;
+    if (overlap / a.size >= 0.9 && overlap / b.size >= 0.8) return lookupDoi(w.DOI);
+  }
+  return null;
 }
 
 // ---------- ISBN ----------
