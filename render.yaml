@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: citemyshi
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: GOOGLE_BOOKS_API_KEY
+        sync: false

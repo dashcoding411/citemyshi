@@ -1,0 +1,11 @@
+{
+  "firestore": { "rules": "firestore.rules" },
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "citemyshi",
+        "supportEmail": "nishilatrivedi@gmail.com"
+      }
+    }
+  }
+}
