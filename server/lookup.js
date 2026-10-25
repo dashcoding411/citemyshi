@@ -132,6 +132,15 @@ export async function lookupDoi(doi) {
   }
 }
 
+// Elsevier article IDs (PII), e.g. S221242091630440X -> DOI via Crossref
+export async function lookupPii(pii) {
+  const clean = pii.replace(/[^0-9A-Z]/gi, '').toUpperCase();
+  const r = await getJSON(`https://api.crossref.org/works?filter=alternative-id:${clean}&rows=1&select=DOI`);
+  const doi = r.message?.items?.[0]?.DOI;
+  if (!doi) throw new Error('Article not found');
+  return lookupDoi(doi);
+}
+
 // ---------- ISBN ----------
 function olAuthors(authors) {
   return (authors || []).map(a => parseName(a.name, { forcePerson: true })).filter(Boolean);

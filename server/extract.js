@@ -5,7 +5,7 @@
 import * as cheerio from 'cheerio';
 import { safeFetch } from './net.js';
 import { parseName, splitAuthors, parseDate, cleanText, today, looksLikeOrg } from './names.js';
-import { lookupDoi, lookupIsbn, lookupArxiv, lookupPmid, lookupPmc, validIsbn, getJSON, prune, googleBookToCsl } from './lookup.js';
+import { lookupDoi, lookupIsbn, lookupArxiv, lookupPmid, lookupPmc, lookupPii, validIsbn, getJSON, prune, googleBookToCsl } from './lookup.js';
 
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -87,7 +87,7 @@ function cleanUrl(u) {
   try {
     const url = new URL(u);
     for (const k of [...url.searchParams.keys()]) {
-      if (/^(utm_|fbclid|gclid|mc_|igshid|ref_src|ref$|cmpid|ocid|smid|sh$|_ga|dclid|yclid|share|si$|feature$)/i.test(k)) url.searchParams.delete(k);
+      if (/^(utm_|fbclid|gclid|mc_|igshid|ref_src|ref$|cmpid|ocid|smid|sh$|_ga|dclid|yclid|share|si$|feature$|casa_token|token$|via$|rfr_id|needaccess|journalcode|pdf_download)/i.test(k)) url.searchParams.delete(k);
     }
     url.hash = '';
     return url.toString().replace(/\?$/, '');
@@ -572,12 +572,18 @@ export async function citeUrl(inputUrl) {
     if (host === 'arxiv.org') { const id = (url.match(/(?:abs|pdf)\/([^?#]+?)(?:v\d+)?(?:\.pdf)?(?:[?#]|$)/) || [])[1]; if (id) return { item: await lookupArxiv(id), source: 'arXiv' }; }
     if (/(^|\.)ncbi\.nlm\.nih\.gov$/.test(host) && /PMC\d+/i.test(url)) return { item: { ...(await lookupPmc(url.match(/PMC(\d+)/i)[1])), URL: cleanUrl(url) }, source: 'PubMed Central' };
     if (/pubmed\.ncbi\.nlm\.nih\.gov$/.test(host)) { const id = (url.match(/\/(\d+)\/?/) || [])[1]; if (id) return { item: { ...(await lookupPmid(id)), URL: cleanUrl(url) }, source: 'PubMed' }; }
+    // Publishers that block servers outright: resolve their article IDs instead
+    if (/(^|\.)(sciencedirect\.com|cell\.com|thelancet\.com|elsevier\.com)$/.test(host)) {
+      const pii = (url.match(/\/pii\/(S?[0-9X()-]{15,})/i) || url.match(/\/(S\d{4}-?\d{3}[\dX]\(?\d{2}\)?\d{5}-?[\dX])/i) || [])[1];
+      if (pii) return { item: { ...(await lookupPii(pii)), accessed: today() }, source: 'DOI' };
+    }
+    if (host === 'jstor.org') { const id = (url.match(/\/stable\/(?:pdf\/)?(\d+)/) || [])[1]; if (id) return { item: await lookupDoi(`10.2307/${id}`), source: 'DOI' }; }
     if (/(^|\.)amazon\./.test(host)) { const isbn = amazonIsbn(url); if (isbn) return { item: await lookupIsbn(isbn), source: 'ISBN' }; }
     if (/^books\.google\./.test(host) || /google\.[a-z.]+$/.test(host) && /\/books\//.test(url)) { const r = await googleBooks(url); if (r) return { item: r, source: 'Google Books' }; }
   } catch (e) { warnings.push(`Quick lookup failed (${e.message}); scanned the page instead.`); }
 
   // DOI embedded in a publisher URL (e.g. /doi/10.1177/...)
-  const urlDoi = (host === 'nature.com' && (url.match(/\/articles\/([a-z0-9.-]+)/i) || [])[1] && `10.1038/${url.match(/\/articles\/([a-z0-9.-]+)/i)[1]}`) || (decodeURIComponent(url).match(/\/(?:doi|abs|full|pdf|epdf)\/(?:abs\/|full\/|pdf\/)?(10\.\d{4,9}\/[^?#\s]+)/) || [])[1];
+  const urlDoi = (host === 'nature.com' && (url.match(/\/articles\/([a-z0-9.-]+)/i) || [])[1] && `10.1038/${url.match(/\/articles\/([a-z0-9.-]+)/i)[1]}`) || (decodeURIComponent(url).match(/\/(?:doi|abs|full|pdf|epdf|article|chapter|book)\/(?:abs\/|full\/|pdf\/|epdf\/)?(10\.\d{4,9}\/[^?#\s]+?)(?:\.pdf)?(?:[?#]|$)/) || decodeURIComponent(url).match(/[?&]doi=(10\.\d{4,9}\/[^&#\s]+)/) || [])[1];
 
   let page;
   try { page = await fetchPage(url); }
