@@ -537,6 +537,27 @@ function mergeScholarly(page, scholarly) {
   return merged;
 }
 
+// Optional: a self-hosted zotero/translation-server for sites our scanner
+// can't read well (JSTOR, IEEE, ScienceDirect…). Set TRANSLATION_SERVER_URL.
+async function viaTranslationServer(url) {
+  const base = process.env.TRANSLATION_SERVER_URL;
+  if (!base) return null;
+  try {
+    const res = await fetch(`${base.replace(/\/$/, '')}/web`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: url, signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return null;
+    const zotItems = await res.json();
+    if (!Array.isArray(zotItems) || !zotItems.length) return null;
+    const exp = await fetch(`${base.replace(/\/$/, '')}/export?format=csljson`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(zotItems.slice(0, 1)), signal: AbortSignal.timeout(15000) });
+    if (!exp.ok) return null;
+    const [csl] = await exp.json();
+    if (!csl?.title) return null;
+    const { id, ...rest } = csl;
+    return prune({ ...rest, URL: rest.URL || cleanUrl(url), accessed: today() });
+  } catch { return null; }
+}
+
+const isWeak = item => !item?.author?.length && !item?.issued;
+
 export async function citeUrl(inputUrl) {
   const url = inputUrl.trim();
   const host = hostOf(url);
@@ -562,6 +583,8 @@ export async function citeUrl(inputUrl) {
   try { page = await fetchPage(url); }
   catch (e) {
     if (urlDoi) { try { return { item: mergeScholarly({ URL: cleanUrl(url) }, await lookupDoi(urlDoi)), source: 'DOI' }; } catch {} }
+    const ts = await viaTranslationServer(url);
+    if (ts) return { item: ts, source: 'Zotero translator' };
     return { item: fromUrlOnly(url), source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`] };
   }
 
@@ -591,6 +614,10 @@ export async function citeUrl(inputUrl) {
         source = 'ISBN';
       } catch {}
     }
+  }
+  if (source === 'Webpage' && isWeak(item)) {
+    const ts = await viaTranslationServer(url);
+    if (ts) { item = { ...item, ...pickDefined(ts) }; source = 'Zotero translator'; }
   }
   if (!item.title) item.title = fromUrlOnly(url).title;
   return { item: prune(item), source, warnings };

@@ -161,7 +161,7 @@ export function openImport() {
         items = (await api('/api/import', { body: { text } })).items;
       }
       if (!items.length) throw new Error('No citations found in that text');
-      addItems(items.map(({ id, 'citation-key': ck, ...rest }) => rest));
+      addItems(items.map(({ id, 'citation-key': ck, ...rest }) => ({ _source: 'Imported', ...rest })));
       m.close();
       toast(`Imported ${items.length} citation${items.length === 1 ? '' : 's'}`);
     } catch (e) {

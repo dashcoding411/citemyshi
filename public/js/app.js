@@ -5,13 +5,14 @@ import * as S from './store.js';
 import { state, active } from './store.js';
 import { openEditor } from './editor.js';
 import { openStylePicker, openInText, openImport, pickProject } from './dialogs.js';
+import { sourceBadge, fixAll, openPaperCheck } from './audit.js';
 
 let cloudMod = null; // optional Firebase sync, loaded lazily so the app works offline
 
 const ui = {
   tab: 'all', query: '', loading: false, results: null, resultsFor: '', kb: -1,
   fmt: null, fmtFor: null, formatting: false,
-  selected: new Set(), filter: '', tagFilter: null, sideFilter: '', editingNote: null, showProjectNotes: false,
+  selected: new Set(), filter: '', tagFilter: null, incompleteOnly: false, fixing: null, sideFilter: '', editingNote: null, showProjectNotes: false,
   flash: null,
 };
 
@@ -448,6 +449,7 @@ function sortedItems() {
   const f = ui.filter.toLowerCase();
   if (f) items = items.filter(i => (by.get(i.id)?.text || i.title || '').toLowerCase().includes(f) || (i._note || '').toLowerCase().includes(f) || (i._tags || []).some(t => t.toLowerCase().includes(f)));
   if (ui.tagFilter) items = items.filter(i => (i._tags || []).includes(ui.tagFilter));
+  if (ui.incompleteOnly) items = items.filter(i => missingInfo(i).length);
   const first = i => { const a = (i.author || i.editor || [])[0]; return (a ? (a.family || a.literal || '') : i.title || '').toLowerCase(); };
   const year = i => i.issued?.['date-parts']?.[0]?.[0] || 0;
   const sorts = {
@@ -484,6 +486,7 @@ function citeHtml(item) {
         <div class="csl ${hanging ? 'hanging' : ''} ${state.serif ? 'serif' : ''}">${f ? linkify(f.html) : `<span style="color:var(--muted)">${esc(item.title || 'Untitled')}</span>`}</div>
         <div class="cite-meta">
           <span class="type-pill">${icon(t.icon)} ${esc(t.label)}</span>
+          ${sourceBadge(item)}
           ${intext ? `<span class="intext-preview">· ${ui.fmt.style.isNote ? 'Note' : 'In-text'}: ${intext.replace(/<[^>]+>/g, '')}</span>` : ''}
           ${missing.length ? `<button class="warn-pill" data-edit title="Missing: ${esc(missing.join(', '))}">${icon('alert')} Missing ${esc(missing.slice(0, 2).join(', ').toLowerCase())}${missing.length > 2 ? ` +${missing.length - 2}` : ''}</button>` : ''}
           ${(item._tags || []).map(tg => `<button class="chip" style="${tagColor(tg)}" data-tag-filter="${esc(tg)}">${esc(tg)}</button>`).join('')}
@@ -508,6 +511,8 @@ function renderBib() {
   const tags = S.allTags(p);
   const selCount = [...ui.selected].filter(id => p.items.some(i => i.id === id)).length;
   const allSel = items.length && items.every(i => ui.selected.has(i.id));
+  const incomplete = p.items.filter(i => missingInfo(i).length).length;
+  if (!incomplete) ui.incompleteOnly = false;
 
   let listHtml;
   if (!p.items.length) {
@@ -539,6 +544,7 @@ function renderBib() {
       <h2>${icon('layers')} ${esc(heading)} ${ui.formatting ? '<span class="spinner" style="width:13px;height:13px;color:var(--muted)"></span>' : ''}</h2>
       <span class="spacer"></span>
       ${p.items.length ? `
+        <button class="btn btn-sm btn-ghost" data-paper-check title="Check your essay's in-text citations against this bibliography">${icon('check')} <span class="hide-sm">Check paper</span></button>
         <button class="btn btn-sm" data-copy-all>${icon('copy')} Copy all</button>
         <button class="btn btn-sm btn-primary" data-export>${icon('download')} Export ${icon('chevronDown')}</button>` : ''}
     </div>
@@ -556,11 +562,13 @@ function renderBib() {
         <button class="btn btn-sm btn-ghost" data-sel-clear>Clear</button>
       ` : `
         <div class="filter-input">${icon('search')}<input placeholder="Filter citations…" value="${esc(ui.filter)}" data-filter></div>
+        ${incomplete ? `<button class="btn btn-sm fix-btn" data-fix-all ${ui.fixing ? 'disabled' : ''} title="Look up missing details automatically">${ui.fixing ? `<span class="spinner" style="width:12px;height:12px"></span> Fixing ${ui.fixing}` : `${icon('sparkles')} Fix ${incomplete} incomplete`}</button>` : ''}
         <span class="spacer"></span>
         <button class="btn btn-sm btn-ghost" data-sort>${icon('sort')} <span class="hide-sm">${esc(SORT_LABELS[p.sort] || SORT_LABELS.style)}</span></button>
         <button class="btn btn-sm btn-ghost" data-group>${icon('layers')} <span class="hide-sm">${p.group && p.group !== 'none' ? `By ${GROUP_LABELS[p.group].toLowerCase()}` : 'Group'}</span></button>
       `}
     </div>
+    ${ui.incompleteOnly ? `<div class="tagbar">${icon('alert')}<span class="lbl" style="color:var(--warn)">Showing ${incomplete} citation${incomplete === 1 ? '' : 's'} that need${incomplete === 1 ? 's' : ''} details — click one to fill it in.</span><button class="btn btn-sm btn-ghost" data-clear-filters>Show all</button></div>` : ''}
     ${tags.length ? `<div class="tagbar"><span class="lbl">${icon('tag')} Tags:</span>${tags.map(([tg, n]) => `<button class="chip ${ui.tagFilter === tg ? 'active' : ''}" style="${tagColor(tg)}" data-tag-filter="${esc(tg)}">${esc(tg)} <span style="opacity:.7">${n}</span></button>`).join('')}${ui.tagFilter ? `<button class="btn btn-sm btn-ghost" data-clear-filters>Show all</button>` : ''}</div>` : ''}
     ` : ''}
     <div class="list" style="${p.items.length ? '' : 'border-radius:12px'}">${listHtml}</div>
@@ -737,7 +745,19 @@ function wireBib() {
     if ('edit' in d && item) return openEditor({ item });
     if ('more' in d) return citeMenu(el, id);
     if ('tagFilter' in d) { ui.tagFilter = ui.tagFilter === d.tagFilter ? null : d.tagFilter; renderBib(); return; }
-    if ('clearFilters' in d) { ui.tagFilter = null; ui.filter = ''; renderBib(); return; }
+    if ('clearFilters' in d) { ui.tagFilter = null; ui.filter = ''; ui.incompleteOnly = false; renderBib(); return; }
+    if ('paperCheck' in d) return openPaperCheck(() => ui.fmt);
+    if ('fixAll' in d) {
+      ui.fixing = '…'; renderBib();
+      fixAll((n, total) => { ui.fixing = `${n}/${total}`; renderBib(); }).then(r => {
+        ui.fixing = null;
+        renderBib();
+        const msg = r.fixed ? `Filled in ${r.fixed} citation${r.fixed === 1 ? '' : 's'}` : 'Couldn’t find anything new automatically';
+        if (r.still) toast(`${msg} · ${r.still} still need${r.still === 1 ? 's' : ''} your input`, { action: { label: 'Show them', fn: () => { ui.incompleteOnly = true; renderBib(); } }, duration: 7000 });
+        else toast(`${msg} — everything’s complete`);
+      });
+      return;
+    }
     if ('copyAll' in d) return copyItems(sortedItems(), `Copied ${sortedItems().length} citations`);
     if ('export' in d) return exportMenu(el, sortedItems());
     if ('sort' in d) return openMenu(el, Object.entries(SORT_LABELS).map(([k, l]) => ({ label: l, checked: (p.sort || 'style') === k, onClick: () => S.updateProject(p.id, { sort: k }) })), { align: 'right' });

@@ -36,6 +36,7 @@ const todayParts = () => { const d = new Date(); return [d.getFullYear(), d.getM
 export function openEditor({ item = {}, isNew = false, source, warnings = [], projectId = state.activeId, onSaved } = {}) {
   const w = JSON.parse(JSON.stringify(item));
   if (!w.type) w.type = 'webpage';
+  if (isNew && !w._source) w._source = source || 'Manual';
   if (isNew && !w.accessed && (w.URL || ['webpage', 'post-weblog', 'post'].includes(w.type))) w.accessed = { 'date-parts': [todayParts()] };
   let contributors = flattenContributors(w);
   if (!contributors.length) contributors.push({ role: 'author', org: false, given: '', family: '', literal: '', suffix: '' });
@@ -261,6 +262,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
       else toast(`Added to ${p.name}`);
       onSaved?.(added);
     } else {
+      if (['Webpage', 'PDF', 'URL'].includes(out._source)) out._checked = true;
       replaceItem(item.id, out, p.id);
       m.close('force');
       toast('Citation updated');
