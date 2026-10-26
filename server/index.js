@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { citeUrl } from './extract.js';
 import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search } from './lookup.js';
-import { formatBibliography, formatInText, searchStyles, loadStyle, bibliographyHeading } from './styles.js';
+import { formatBibliography, formatInText, searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
 import { toDocx, toFormat, parseImport } from './export.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -12,6 +12,32 @@ const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy
 app.disable('x-powered-by');
 app.use(compression());
+
+// The website lives on Firebase Hosting and calls this server from there.
+const ALLOWED_ORIGINS = [
+  /^https:\/\/citemyshi\.(web\.app|firebaseapp\.com)$/,
+  /^https:\/\/citemyshi--[\w-]+\.web\.app$/, // Firebase preview channels
+  /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
+  ...(process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
+];
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.some(o => (o instanceof RegExp ? o.test(origin) : o === origin))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+// Visitors who land on the server's own address get sent to the real site,
+// so everyone's projects live in one place.
+if (process.env.FRONTEND_URL) {
+  app.get(['/', '/index.html'], (req, res) => res.redirect(302, process.env.FRONTEND_URL));
+}
 
 // Simple per-visitor rate limit for the endpoints that hit other websites
 const hits = new Map();
@@ -83,7 +109,12 @@ app.post('/api/format', wrap(async req => {
 
 app.post('/api/intext', wrap(async req => formatInText(req.body)));
 
-app.get('/api/styles', wrap(async req => searchStyles(String(req.query.q || ''))));
+app.get('/api/styles', wrap(async req => {
+  const opts = { degree: req.query.degree ? String(req.query.degree) : undefined, uni: req.query.uni === '1', limit: Math.min(300, Number(req.query.limit) || 40) };
+  const r = searchStyles(String(req.query.q || ''), opts);
+  return Array.isArray(r) ? r : (opts.degree || opts.uni || req.query.full ? r : r.results);
+}));
+app.get('/api/languages', wrap(async () => LANGUAGES));
 app.get('/api/style/:name', wrap(async req => {
   const s = await loadStyle(req.params.name);
   return { name: s.name, title: s.title, isNote: s.isNote, heading: bibliographyHeading(s.name) };

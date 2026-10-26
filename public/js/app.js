@@ -1,4 +1,4 @@
-import { $, $$, esc, api, debounce, toast, openMenu, closeMenu, openModal, confirmDialog, promptDialog, copyRich, download, tagColor, FOLDER_COLORS, topModal } from './ui.js';
+import { $, $$, esc, api, warmUp, debounce, toast, openMenu, closeMenu, openModal, confirmDialog, promptDialog, copyRich, download, tagColor, FOLDER_COLORS, topModal } from './ui.js';
 import { icon } from './icons.js';
 import { CITE_TABS, SOURCE_TYPES, sourceTypeFor, missingInfo } from './types.js';
 import * as S from './store.js';
@@ -846,6 +846,7 @@ import('./cloud.js').then(m => {
   renderSidebar();
 }).catch(e => console.warn('Cloud sync unavailable:', e.message));
 
+warmUp();
 renderSidebar();
 renderTopbar();
 renderCiteCard();

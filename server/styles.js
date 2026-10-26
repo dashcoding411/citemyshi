@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { DEGREES } from '../public/js/degrees.js';
 
 const require = createRequire(import.meta.url);
 const CSL = require('citeproc');
@@ -78,9 +79,16 @@ function decodeEntities(s) {
   return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 }
 
+// All 60+ CSL languages ship in data/locales; "fr" → "fr-FR" etc. via locales.json
+const localesMetaPath = path.join(root, 'data', 'locales.json');
+const localesMeta = fs.existsSync(localesMetaPath) ? JSON.parse(fs.readFileSync(localesMetaPath, 'utf8')) : { 'primary-dialects': {}, 'language-names': {} };
+export const LANGUAGES = Object.entries(localesMeta['language-names']).map(([code, [native, english]]) => ({ code, native, english }))
+  .sort((a, b) => a.english.localeCompare(b.english));
+
 function retrieveLocale(lang) {
   if (localeCache.has(lang)) return localeCache.get(lang);
-  const candidates = [lang, { en: 'en-US', fr: 'fr-FR', de: 'de-DE', es: 'es-ES', it: 'it-IT', pt: 'pt-BR', nl: 'nl-NL' }[lang.split('-')[0]], 'en-US'];
+  const base = String(lang).split('-')[0];
+  const candidates = [lang, localesMeta['primary-dialects'][base], `${base}-${base.toUpperCase()}`, 'en-US'];
   for (const c of candidates) {
     if (!c) continue;
     const f = path.join(localesDir, `locales-${c}.xml`);
@@ -103,33 +111,54 @@ const ALIASES = {
 };
 const acronym = t => t.replace(/\([^)]*\)/g, ' ').split(/[\s-]+/).filter(w => /^\p{Lu}/u.test(w)).map(w => w[0]).join('').toLowerCase();
 
-export function searchStyles(q, limit = 40) {
+const UNI = /\b(universit|college|school|institut|hochschule|polytechnic|école|ecole|academy of art)/i;
+const NOT_UNI = /\b(journal|acta|annals|annales|bulletin|review|proceedings|abhandlungen|transactions|quarterly|revista|rivista|zeitschrift|studies|studia|magazine|letters|series|archives|research|reports|cahiers|anuario|anais|boletim|forum|science|mathematica)\b/i;
+
+// q: free text. degree: one of DEGREES (limits to its subject fields/keywords).
+// uni: only university/college house styles.
+export function searchStyles(q, { limit = 40, degree, uni } = {}) {
   q = (q || '').toLowerCase().trim();
-  if (!q) return POPULAR.map(([n, t]) => ({ name: n, title: t, popular: true }));
-  const words = q.split(/\s+/);
+  const deg = degree ? DEGREES.find(d => d.id === degree) : null;
+  if (!q && !deg && !uni) return POPULAR.map(([n, t]) => ({ name: n, title: t, popular: true }));
+  const words = q ? q.split(/\s+/) : [];
+  const curated = deg ? new Set(deg.styles.map(x => x[0])) : null;
   const scored = [];
   for (const s of styleIndex) {
-    const acr = acronym(s.t);
-    const hay = `${s.t} ${s.s || ''} ${s.n} ${acr}`.toLowerCase();
-    const aliasHit = ALIASES[q] === s.n || ALIASES[q.replace(/\s+/g, '')] === s.n;
-    const acrHit = q.replace(/\s|\d+(st|nd|rd|th)?$/g, '').length >= 3 && acr.startsWith(q.replace(/\s|\d+(st|nd|rd|th)?$/g, ''));
-    if (!aliasHit && !acrHit && !words.every(w => hay.includes(w))) continue;
+    if (deg) {
+      const inField = deg.fields.some(f => s.c?.includes(f));
+      const inKeywords = deg.keywords?.some(k => s.t.toLowerCase().includes(k));
+      if (!inField && !inKeywords && !curated.has(s.n)) continue;
+    }
+    if (uni && (!UNI.test(s.t) || NOT_UNI.test(s.t))) continue;
     let score = 0;
-    if (aliasHit) score += 500;
-    if (acrHit) score += 60;
-    if (s.n === q || (s.s || '').toLowerCase() === q) score += 100;
-    if (s.t.toLowerCase().startsWith(q)) score += 50;
+    if (q) {
+      const acr = acronym(s.t);
+      const hay = `${s.t} ${s.s || ''} ${s.n} ${acr}`.toLowerCase();
+      const aliasHit = ALIASES[q] === s.n || ALIASES[q.replace(/\s+/g, '')] === s.n;
+      const acrHit = q.replace(/\s|\d+(st|nd|rd|th)?$/g, '').length >= 3 && acr.startsWith(q.replace(/\s|\d+(st|nd|rd|th)?$/g, ''));
+      if (!aliasHit && !acrHit && !words.every(w => hay.includes(w))) continue;
+      if (aliasHit) score += 500;
+      if (acrHit) score += 60;
+      if (s.n === q || (s.s || '').toLowerCase() === q) score += 100;
+      if (s.t.toLowerCase().startsWith(q)) score += 50;
+      score -= s.t.length / 20;
+    } else {
+      score -= s.t.toLowerCase().charCodeAt(0) / 1000; // alphabetical when browsing
+    }
     if (!s.d) score += 10;
     const pop = POPULAR.findIndex(([n]) => n === s.n);
     if (pop >= 0) score += 200 - pop;
-    score -= s.t.length / 20;
     scored.push({ s, score });
   }
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map(({ s }) => {
-    const pop = POPULAR.find(([n]) => n === s.n);
-    return { name: s.n, title: pop ? pop[1] : s.t, full: s.t, format: s.f };
-  });
+  if (!q) scored.sort((a, b) => a.s.t.localeCompare(b.s.t)); // browsing a subject: plain A–Z
+  else scored.sort((a, b) => b.score - a.score);
+  return {
+    total: scored.length,
+    results: scored.slice(0, limit).map(({ s }) => {
+      const pop = POPULAR.find(([n]) => n === s.n);
+      return { name: s.n, title: pop ? pop[1] : s.t, full: s.t, format: s.f };
+    }),
+  };
 }
 
 // citeproc doesn't like stray fields; keep it clean.

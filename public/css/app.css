@@ -314,6 +314,14 @@ button.chip:hover { filter: brightness(.96); }
 .style-opt .fmt { font-size: 11px; color: var(--muted); }
 .style-sample { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px; border: 1px solid var(--border); font-size: 14px; }
 
+/* style picker degree tabs */
+.deg-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 12px; margin: 0 -2px; scrollbar-width: thin; }
+.deg-tab { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font-size: 12.5px; font-weight: 600; }
+.deg-tab:hover { border-color: var(--border-strong); background: var(--sunken); }
+.deg-tab.active { background: var(--brand-soft); color: var(--brand-ink); border-color: color-mix(in srgb, var(--brand) 45%, var(--border)); }
+.deg-tab svg { width: 14px; height: 14px; }
+.style-opt .badge { margin-left: 6px; }
+
 /* in-text */
 .intext-row { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--border); border-radius: 11px; margin-bottom: 10px; }
 .intext-row .lbl { font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); width: 104px; flex: none; }

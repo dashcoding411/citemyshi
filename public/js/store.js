@@ -6,7 +6,7 @@ const listeners = new Set();
 
 function blankProject(name = 'My bibliography', extra = {}) {
   const now = Date.now();
-  return { id: uid(), name, folderId: null, style: 'apa', styleTitle: 'APA 7th edition', lang: 'en-US', items: [], notes: '', createdAt: now, updatedAt: now, sort: 'style', group: 'none', ...extra };
+  return { id: uid(), name, folderId: null, style: 'apa', styleTitle: 'APA 7th edition', lang: '', items: [], notes: '', createdAt: now, updatedAt: now, sort: 'style', group: 'none', ...extra };
 }
 
 function defaults() {
@@ -21,6 +21,8 @@ function load() {
       s.folders ||= [];
       s.recentStyles ||= [];
       s.deleted ||= {};
+      // '' = use each style's own language (AGLC/OSCOLA are British English)
+      if (!s.langMigrated) { s.projects.forEach(p => { if (p.lang === 'en-US') p.lang = ''; }); s.langMigrated = true; }
       if (!s.projects.find(p => p.id === s.activeId)) s.activeId = s.projects[0].id;
       return s;
     }
@@ -48,7 +50,7 @@ export const active = () => state.projects.find(p => p.id === state.activeId) ||
 export const project = id => state.projects.find(p => p.id === id);
 
 export function createProject(name, folderId = null, inherit = active()) {
-  const p = blankProject(name, { folderId, style: inherit?.style || 'apa', styleTitle: inherit?.styleTitle || 'APA 7th edition', lang: inherit?.lang || 'en-US' });
+  const p = blankProject(name, { folderId, style: inherit?.style || 'apa', styleTitle: inherit?.styleTitle || 'APA 7th edition', lang: inherit?.lang || '' });
   state.projects.push(p);
   state.activeId = p.id;
   emit({ projects: true, project: true });

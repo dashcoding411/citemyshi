@@ -1,4 +1,5 @@
 import { icon } from './icons.js';
+import { API_BASE } from './config.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -9,17 +10,42 @@ export function esc(s) {
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
-export async function api(path, { method, body, raw } = {}) {
-  const res = await fetch(path, {
-    method: method || (body ? 'POST' : 'GET'),
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (raw) { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`); return res; }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-  return data;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let wakeNotice = null;
+
+// All server calls go through here. Retries briefly when the server is waking
+// up or the network blips, and tells the user if it's taking a while.
+export async function api(path, { method, body, raw, retries = 2 } = {}) {
+  const slow = setTimeout(() => {
+    if (API_BASE && !wakeNotice) wakeNotice = toast('Waking up the citation server — the first request can take up to 30 seconds…', { duration: 60000 });
+  }, 4000);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      let res;
+      try {
+        res = await fetch(API_BASE + path, {
+          method: method || (body ? 'POST' : 'GET'),
+          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          body: body ? JSON.stringify(body) : undefined,
+        });
+      } catch {
+        if (attempt < retries) { await sleep(1500 * (attempt + 1)); continue; }
+        throw new Error('Can’t reach the citation server. Check your internet connection and try again.');
+      }
+      if ([502, 503, 504].includes(res.status) && attempt < retries) { await sleep(2500 * (attempt + 1)); continue; }
+      if (raw) { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`); return res; }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || (res.status >= 500 ? 'The citation server had a problem — try again in a moment.' : `Error ${res.status}`));
+      return data;
+    }
+  } finally {
+    clearTimeout(slow);
+    if (wakeNotice) { wakeNotice(); wakeNotice = null; }
+  }
 }
+
+// Start waking the server as soon as the page opens, before anyone types.
+export const warmUp = () => fetch(`${API_BASE}/healthz`, { cache: 'no-store' }).catch(() => {});
 
 export function debounce(fn, ms) {
   let t;
@@ -35,6 +61,7 @@ export function toast(msg, { action, error, duration = 4200 } = {}) {
   const close = () => { el.style.transition = 'opacity .2s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 200); };
   if (action) el.querySelector('button').onclick = () => { action.fn(); close(); };
   setTimeout(close, duration);
+  return close;
 }
 
 // ---------- dropdown menus ----------
