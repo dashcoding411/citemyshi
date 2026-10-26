@@ -36,7 +36,8 @@ export function friendlyError(e) {
   if (code === 'auth/unauthorized-domain') return `This address isn’t allowed to sign in. Firebase console → Authentication → Settings → Authorized domains → add ${location.hostname}.`;
   if (code === 'auth/popup-blocked') return 'Your browser blocked the sign-in pop-up. Allow pop-ups for this site and try again.';
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
-  if (code === 'permission-denied' || /PERMISSION_DENIED|has not been used|not exist/i.test(e?.message || '')) return 'Cloud sync isn’t set up yet. In the Firebase console create a Firestore database and publish the rules in firestore.rules.';
+  if (/has not been used|database .*does not exist|NOT_FOUND/i.test(e?.message || '') || code === 'not-found') return 'Cloud sync isn’t available right now — your projects are still saved on this device.';
+  if (code === 'permission-denied' || /PERMISSION_DENIED/i.test(e?.message || '')) return 'Sync was refused — try signing out and back in. Your projects are still saved on this device.';
   if (code === 'unavailable') return 'You’re offline — changes will sync when you reconnect.';
   return e?.message || 'Something went wrong with sync';
 }
