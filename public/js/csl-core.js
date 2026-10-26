@@ -123,6 +123,8 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
   }
 
   const NP = /\[?NO_PRINTED_FORM\]?/g;
+  // "p. s 9" / "p. [42]" -> "s 9" / "[42]" (legal pinpoints carry their own label)
+  const cleanPin = h => String(h).replace(/\b(?:pp?\.)\s*(?=(?:ss?|pts?|schs?|regs?|rr?|cll?|arts?|divs?)\s|\[)/g, '');
   function inText(engine, style, cite) {
     const paren = engine.makeCitationCluster([cite]);
     let narrative = '';
@@ -256,7 +258,8 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     // Numbered styles keep their [1]; author-date and note styles cite the Act/case itself
     const numbered = /^\s*(<[^>]+>)*[[(]?\d+[\])]?(<\/[^>]+>)*\s*$/.test(entry.intext?.paren || '');
     if (!numbered) {
-      const pin = locator ? ` ${locator}` : '';
+      // Cases: ", 20" or ", [42]"; Acts: " s 9"
+      const pin = !locator ? '' : item.type === 'legal_case' ? `, ${locator}` : ` ${locator}`;
       out.intext = style.isNote
         ? { paren: `${legal.html}${esc(pin)}.`, narrative: '' }
         : { paren: `(${legal.html}${esc(pin)})`, narrative: `${legal.html}${esc(pin)}` };
@@ -272,7 +275,76 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     const cite = { id: clean.id };
     if (locator) { cite.locator = String(locator); cite.label = label; }
     const r = fixLegal(style, [clean], { id: clean.id, intext: inText(engine, style, cite) }, locator);
-    return { ...r.intext, isNote: style.isNote };
+    return { paren: cleanPin(r.intext.paren), narrative: cleanPin(r.intext.narrative), isNote: style.isNote };
+  }
+
+  // A whole document's citations in order — this is what makes "Ibid", "(n 3)"
+  // and short-form subsequent notes work, and numbers IEEE/Vancouver
+  // references by first citation. citations: [{ id, items: [{ id, locator, label }] }]
+  async function formatDocument({ items, style: styleName = 'apa', lang, citations = [], uncited = false }) {
+    const { style, lang: code } = await prepare(styleName, lang);
+    const clean = items.map(i => sanitizeItem(styleFixes(style, { ...i, id: String(i.id) })));
+    const known = new Set(clean.map(i => i.id));
+    const cits = citations
+      .map((c, i) => ({ id: String(c.id || `c${i}`), items: (c.items || []).filter(x => known.has(String(x.id))) }))
+      .filter(c => c.items.length)
+      .map((c, i) => ({
+        citationID: c.id,
+        citationItems: c.items.map(x => {
+          const ci = { id: String(x.id) };
+          if (x.locator) { ci.locator = String(x.locator); ci.label = x.label || 'page'; }
+          return ci;
+        }),
+        properties: { noteIndex: style.isNote ? i + 1 : 0 },
+      }));
+    const holder = { map: new Map(clean.map(i => [i.id, i])) };
+    const engine = new CSL.Engine({ retrieveLocale, retrieveItem: id => holder.map.get(String(id)) }, style.xml, code, true);
+    engine.setOutputFormat('html');
+    const citedIds = new Set(cits.flatMap(c => c.citationItems.map(x => x.id)));
+    const uncitedIds = uncited ? clean.map(i => i.id).filter(id => !citedIds.has(id)) : [];
+    const out = cits.length ? engine.rebuildProcessorState(cits, 'html', uncitedIds) : (engine.updateItems(uncitedIds), []);
+    const byId = new Map(out.map(([cid, , str]) => [cid, str]));
+    const firstNote = new Map(); // item -> note number of its first full citation
+    const chicago = /^(chicago|turabian)/.test(style.name);
+    const formatted = cits.map((c, i) => {
+      let html = byId.get(c.citationID) || '';
+      // Australian/UK/NZ law in non-legal styles, the AGLC way: in full the first
+      // time, then "Ibid" or a short form pointing back to the first note
+      if (!LEGAL_STYLE.test(style.name) && c.citationItems.length === 1) {
+        const ci = c.citationItems[0];
+        const item = holder.map.get(ci.id);
+        const legal = item && localLegal(item);
+        if (legal && !/^\s*(<[^>]+>)*[[(]?\d+/.test(html)) {
+          const prev = i > 0 && cits[i - 1].citationItems.length === 1 && cits[i - 1].citationItems[0].id === ci.id;
+          const pin = !ci.locator ? '' : item.type === 'legal_case' ? `, ${ci.locator}` : ` ${ci.locator}`;
+          // Chicago 18 prefers short notes to "Ibid."
+          if (style.isNote && prev && !chicago) html = `Ibid${pin ? ` ${pin.replace(/^,\s*/, '')}` : ''}.`;
+          else if (style.isNote && firstNote.has(ci.id)) {
+            const short = `<i>${esc(item.title.replace(/\s+(Act|Regulations?|Bill)$/, ' $1'))}</i>`;
+            html = chicago ? `${short}${pin.replace(/^\s(?=s)/, ', ')}.` : `${short} (n ${firstNote.get(ci.id)})${pin.replace(/^,\s*/, ' ')}.`;
+          } else {
+            const fixed = fixLegal(style, [item], { id: item.id, intext: { paren: html, narrative: '' } }, ci.locator);
+            html = fixed.intext.paren;
+          }
+        }
+      }
+      if (style.isNote) for (const ci of c.citationItems) if (!firstNote.has(ci.id)) firstNote.set(ci.id, i + 1);
+      html = cleanPin(html);
+      return { id: c.citationID, note: style.isNote ? i + 1 : null, html, text: decode(html.replace(/<[^>]+>/g, '')) };
+    });
+    let entries = [];
+    if (engine.bibliography && (cits.length || uncitedIds.length)) {
+      const bib = engine.makeBibliography();
+      if (bib) {
+        const [params, html] = bib;
+        const skipped = new Set((params.bibliography_errors || []).map(e => String(e.itemID)));
+        const ids = (params.entry_ids || []).map(x => String(x[0] ?? x)).filter(id => !skipped.has(id));
+        engine.setOutputFormat('text');
+        const text = engine.makeBibliography()?.[1] || [];
+        entries = ids.map((id, k) => fixLegal(style, clean, { id, html: (html[k] || '').trim(), text: decode((text[k] || '').trim()), intext: { paren: '', narrative: '' } }));
+      }
+    }
+    return { style: { name: style.name, title: style.title, isNote: style.isNote }, citations: formatted, entries };
   }
 
   async function styleInfo({ style: name }) {
@@ -285,6 +357,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     // Style-picker previews: don't let them push the project's engine out of the cache
     sample: args => format(args, { throwaway: true }),
     intext: intextOne,
+    document: formatDocument,
     styleInfo,
   };
 

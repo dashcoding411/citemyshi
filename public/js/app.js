@@ -10,6 +10,7 @@ import { formatBibliography } from './formatter.js';
 import { DEGREES } from './degrees.js';
 import { quotesHtml, openQuoteForm, deleteQuote, copyQuote, quotesExport } from './quotes.js';
 import { readPdf } from './pdf.js';
+import { openPlanner } from './planner.js';
 
 let cloudMod = null; // optional Firebase sync, loaded lazily so the app works offline
 
@@ -665,6 +666,7 @@ function renderBib() {
       <h2>${icon('layers')} ${esc(heading)} ${ui.formatting ? '<span class="spinner" style="width:13px;height:13px;color:var(--muted)"></span>' : ''}</h2>
       <span class="spacer"></span>
       ${p.items.length ? `
+        <button class="btn btn-sm btn-ghost" data-planner title="Footnotes in essay order — Ibid, short forms, numbering">${icon('layers')} <span class="hide-sm">${ui.fmt?.style?.isNote ? 'Footnotes' : 'Citation order'}</span></button>
         <button class="btn btn-sm btn-ghost" data-paper-check title="Check your essay's in-text citations against this bibliography">${icon('check')} <span class="hide-sm">Check paper</span></button>
         <button class="btn btn-sm" data-copy-all>${icon('copy')} Copy all</button>
         <button class="btn btn-sm btn-primary" data-export>${icon('download')} Export ${icon('chevronDown')}</button>` : ''}
@@ -928,6 +930,7 @@ function wireBib() {
     if ('tagFilter' in d) { ui.tagFilter = ui.tagFilter === d.tagFilter ? null : d.tagFilter; renderBib(); return; }
     if ('clearFilters' in d) { ui.tagFilter = null; ui.filter = ''; ui.incompleteOnly = false; renderBib(); return; }
     if ('paperCheck' in d) return openPaperCheck(() => ui.fmt);
+    if ('planner' in d) return openPlanner();
     if ('fixAll' in d) {
       ui.fixing = '…'; renderBib();
       fixAll((n, total) => { ui.fixing = `${n}/${total}`; renderBib(); }).then(r => {

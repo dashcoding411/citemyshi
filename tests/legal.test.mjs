@@ -66,3 +66,41 @@ test('legal databases: page titles and links', () => {
   assert.equal(austlii.authority, 'HCA'); assert.equal(austlii.number, '23'); assert.equal(austlii.issued['date-parts'][0][0], 1992);
   assert.equal(legalFromPage('https://legislation.nsw.gov.au/view/html/inforce/current/act-1900-040', '')['container-title'], 'NSW');
 });
+
+// Footnotes across a whole document: Ibid, (n X) and short forms
+const ITEMS_DOC = () => [
+  { id: 'mabo', ...parseLegalCitation('Mabo v Queensland (No 2) (1992) 175 CLR 1').item },
+  { id: 'act', ...parseLegalCitation('Corporations Act 2001 (Cth)').item },
+  { id: 'book', type: 'book', title: 'Pride and prejudice', author: [{ given: 'Jane', family: 'Austen' }], publisher: 'Penguin Books', issued: { 'date-parts': [[2003]] } },
+];
+const SEQ = [['mabo', '20'], ['mabo', '42'], ['act', 's 9'], ['book', '12'], ['mabo', '50'], ['act', 's 9'], ['act', 's 180']]
+  .map(([id, locator], i) => ({ id: `c${i}`, items: [{ id, locator, label: 'page' }] }));
+
+test('AGLC footnotes: Ibid and (n X)', async () => {
+  const r = await formatter.document({ items: ITEMS_DOC(), style: 'australian-guide-to-legal-citation', citations: SEQ });
+  assert.deepEqual(r.citations.map(c => c.text), [
+    'Mabo v Queensland (No 2) (1992) 175 CLR 1, 20.',
+    'Ibid 42.',
+    'Corporations Act 2001 (Cth) s 9.',
+    'Jane Austen, Pride and Prejudice (Penguin Books, 2003) 12.',
+    'Mabo v Queensland (No 2) (n 1) 50.',
+    'Corporations Act (n 3) s 9.',
+    'Ibid s 180.',
+  ]);
+  assert.deepEqual(r.citations.map(c => c.note), [1, 2, 3, 4, 5, 6, 7]);
+});
+
+test('Chicago footnotes use short forms for repeats', async () => {
+  const r = await formatter.document({ items: ITEMS_DOC(), style: 'chicago-notes-bibliography', citations: SEQ });
+  const t = r.citations.map(c => c.text);
+  assert.equal(t[0], 'Mabo v Queensland (No 2) (1992) 175 CLR 1, 20.');
+  assert.equal(t[4], 'Mabo v Queensland (No 2), 50.');
+  assert.equal(t[5], 'Corporations Act, s 9.');
+});
+
+test('IEEE numbers references by first citation', async () => {
+  const items = [{ ...ITEMS_DOC()[2] }, { id: 'j', type: 'article-journal', title: 'Deep learning', author: [{ given: 'Yann', family: 'LeCun' }], 'container-title': 'Nature', issued: { 'date-parts': [[2015]] } }];
+  const r = await formatter.document({ items, style: 'ieee', citations: [{ id: 'a', items: [{ id: 'j' }] }, { id: 'b', items: [{ id: 'book', locator: '12', label: 'page' }] }, { id: 'c', items: [{ id: 'j' }] }] });
+  assert.deepEqual(r.citations.map(c => c.text), ['[1]', '[2, p. 12]', '[1]']);
+  assert.match(r.entries[0].text, /^\[1\] Y\. LeCun/);
+});

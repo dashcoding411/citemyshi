@@ -35,3 +35,4 @@ export const formatBibliography = args => call('format', args);
 export const formatSample = args => call('sample', args);
 export const formatInText = args => call('intext', args);
 export const styleInfo = name => call('styleInfo', { style: name });
+export const formatDocument = args => call('document', args);
