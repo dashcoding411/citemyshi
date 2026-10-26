@@ -52,12 +52,17 @@ export function openStylePicker() {
   async function load() {
     const my = ++seq;
     const query = q.value.trim();
-    $$('.deg-tab', m.el).forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    // Typing searches every style; the tabs are for browsing
+    $$('.deg-tab', m.el).forEach(b => b.classList.toggle('active', !query && b.dataset.tab === tab));
     list.innerHTML = '<div class="skel"><div style="width:70%"></div><div style="width:50%"></div><div style="width:60%"></div></div>';
     try {
       let html = '';
       const deg = DEGREES.find(d => d.id === tab);
-      if (tab === 'popular') {
+      if (query) {
+        const r = await api(`/api/styles?q=${encodeURIComponent(query)}&limit=100&full=1`);
+        if (my !== seq) return;
+        html = r.results.length ? `<div class="menu-label">${r.total} matching style${r.total === 1 ? '' : 's'}${r.total > 100 ? ' — showing the best 100' : ''}</div>${r.results.map(s => row(s)).join('')}` : noMatch(query);
+      } else if (tab === 'popular') {
         const results = await api(`/api/styles?q=${encodeURIComponent(query)}&limit=60`);
         if (my !== seq) return;
         const list2 = Array.isArray(results) ? results : results.results;
@@ -91,9 +96,8 @@ export function openStylePicker() {
     } catch (e) { if (my === seq) list.innerHTML = `<div class="results-empty">${esc(e.message)}</div>`; }
   }
 
-  function noMatch(query, uni) {
-    return `<div class="results-empty">No styles match “${esc(query)}”${uni ? ' — try the city or a shorter name' : ''}.<br>
-      <button class="btn btn-sm" style="margin-top:10px" data-search-all>Search all 10,869 styles</button></div>`;
+  function noMatch(query) {
+    return `<div class="results-empty">No styles match “${esc(query)}”. Try a shorter name, an abbreviation (e.g. AGLC, MLA) or your university’s city.</div>`;
   }
 
   const showSample = debounce(async s => {
@@ -120,8 +124,7 @@ export function openStylePicker() {
 
   m.el.addEventListener('click', e => {
     const t = e.target.closest('[data-tab]');
-    if (t) { tab = t.dataset.tab; load(); q.focus(); return; }
-    if (e.target.closest('[data-search-all]')) { tab = 'popular'; load(); }
+    if (t) { tab = t.dataset.tab; q.value = ''; load(); q.focus(); }
   });
   q.oninput = debounce(load, 160);
   q.onkeydown = e => {

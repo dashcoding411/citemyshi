@@ -7,18 +7,14 @@ import { safeFetch } from './net.js';
 import { parseName, splitAuthors, parseDate, cleanText, today, looksLikeOrg } from './names.js';
 import { lookupDoi, lookupIsbn, lookupArxiv, lookupPmid, lookupPmc, lookupPii, findByTitle, validIsbn, getJSON, prune, googleBookToCsl } from './lookup.js';
 
-const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+// One honest request per page: a normal browser string plus who we are, like
+// other link-preview services. Sites that block automated access are respected
+// — we fall back to official sources (DOI, Crossref title lookup) instead.
+const PAGE_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 citemyshi/1.0 (+https://citemyshi.web.app)',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/pdf;q=0.8,*/*;q=0.7',
   'Accept-Language': 'en-US,en;q=0.9',
-  'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'none', 'Upgrade-Insecure-Requests': '1',
 };
-// Sites that block scrapers usually still serve metadata to link-preview bots.
-const FALLBACK_UAS = [
-  'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-  'Twitterbot/1.0',
-];
 
 // Well-known sites whose og:site_name is missing or unhelpful
 const SITE_NAMES = {
@@ -108,19 +104,16 @@ async function tryFetch(url, headers, timeout) {
   // Cloudflare / bot-wall pages don't contain metadata
   const wall = /<title>\s*(Just a moment|Attention Required|Access denied|Access Denied|Are you a robot|Please verify|Robot or human|Client Challenge|Security check|Verifying|One moment|Pardon Our Interruption|Checking your browser|Request blocked)/i.test(html)
     || (hostOf(res.url) && hostOf(res.url) !== hostOf(url) && /^(idp|auth|login|signin|sso|accounts|consent)\./.test(new URL(res.url).hostname));
-  if (wall) throw new Error('Blocked by bot protection');
+  if (wall) throw new Error('This site blocks automated access');
   return { kind: 'html', html, finalUrl: res.url, status: res.status };
 }
 
-// Normal browser first; if the site blocks us, try the link-preview bots all at
-// once (not one after another) and take whichever gets through first.
 async function fetchPage(url) {
-  try { return await tryFetch(url, BROWSER_HEADERS, 9000); }
-  catch (first) {
-    if (first.name === 'TimeoutError' || /timeout|aborted/i.test(first.message)) throw new Error('The site took too long to respond');
-    if (/isn’t allowed|Only http/.test(first.message)) throw first;
-    try { return await Promise.any(FALLBACK_UAS.map(ua => tryFetch(url, { 'User-Agent': ua, Accept: '*/*' }, 6000))); }
-    catch { throw first; }
+  try { return await tryFetch(url, PAGE_HEADERS, 9000); }
+  catch (e) {
+    if (e.name === 'TimeoutError' || /timeout|aborted/i.test(e.message)) throw new Error('The site took too long to respond');
+    if (e.status === 403 || e.status === 401 || e.status === 429) throw new Error('This site blocks automated access');
+    throw e;
   }
 }
 
@@ -466,29 +459,43 @@ function isoDuration(d) {
 }
 
 // ---------- special sites ----------
-async function youtube(url) {
-  const [o, pageRes] = await Promise.allSettled([
-    getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`),
-    fetchPage(url),
-  ]);
-  if (o.status === 'rejected') throw o.reason;
-  const item = { type: 'webpage', genre: 'Video', title: o.value.title, author: [{ literal: o.value.author_name }], 'container-title': 'YouTube', URL: cleanUrl(url), accessed: today() };
-  try {
-    const page = pageRes.status === 'fulfilled' ? pageRes.value : null;
-    if (page?.kind === 'html') {
-      const $ = cheerio.load(page.html);
-      const d = $('meta[itemprop="datePublished"]').attr('content') || $('meta[itemprop="uploadDate"]').attr('content') || (page.html.match(/"publishDate":"([^"]+)"/) || [])[1] || (page.html.match(/"uploadDate":"([^"]+)"/) || [])[1];
-      item.issued = d && /T/.test(d) ? parseDate(new Date(d).toISOString()) : parseDate(d);
-      const dur = $('meta[itemprop="duration"]').attr('content');
-      if (dur) item.dimensions = isoDuration(dur);
-    }
-  } catch {}
-  // Short canonical URL: https://www.youtube.com/watch?v=ID
+function youtubeId(url) {
   try {
     const u = new URL(url);
-    const id = u.hostname.includes('youtu.be') ? u.pathname.slice(1) : u.searchParams.get('v') || (u.pathname.match(/\/(?:shorts|embed|live)\/([^/?]+)/) || [])[1];
-    if (id) item.URL = `https://www.youtube.com/watch?v=${id}`;
-  } catch {}
+    return u.hostname.includes('youtu.be') ? u.pathname.slice(1).split('/')[0] : u.searchParams.get('v') || (u.pathname.match(/\/(?:shorts|embed|live)\/([^/?]+)/) || [])[1];
+  } catch { return null; }
+}
+
+// Official sources only: the YouTube Data API when YOUTUBE_API_KEY is set
+// (title, channel, exact upload date), otherwise oEmbed (title + channel) plus
+// the watch page's own metadata when YouTube serves it to us.
+async function youtube(url) {
+  const id = youtubeId(url);
+  const canonical = id ? `https://www.youtube.com/watch?v=${id}` : cleanUrl(url);
+  if (id && process.env.YOUTUBE_API_KEY) {
+    try {
+      const r = await getJSON(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${encodeURIComponent(id)}&key=${process.env.YOUTUBE_API_KEY}`);
+      const v = r.items?.[0];
+      if (v) return prune({
+        type: 'webpage', genre: 'Video', title: v.snippet.title, author: [{ literal: v.snippet.channelTitle }], 'container-title': 'YouTube',
+        issued: parseDate(v.snippet.publishedAt), dimensions: isoDuration(v.contentDetails?.duration), URL: canonical, accessed: today(),
+      });
+    } catch {}
+  }
+  const [o, pageRes] = await Promise.allSettled([
+    getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent(canonical)}&format=json`),
+    fetchPage(canonical),
+  ]);
+  if (o.status === 'rejected') throw o.reason;
+  const item = { type: 'webpage', genre: 'Video', title: o.value.title, author: [{ literal: o.value.author_name }], 'container-title': 'YouTube', URL: canonical, accessed: today() };
+  const page = pageRes.status === 'fulfilled' ? pageRes.value : null;
+  if (page?.kind === 'html') {
+    const $ = cheerio.load(page.html);
+    const d = $('meta[itemprop="datePublished"]').attr('content') || $('meta[itemprop="uploadDate"]').attr('content') || (page.html.match(/"publishDate":"([^"]+)"/) || [])[1] || (page.html.match(/"uploadDate":"([^"]+)"/) || [])[1];
+    item.issued = d && /T/.test(d) ? parseDate(new Date(d).toISOString()) : parseDate(d);
+    const dur = $('meta[itemprop="duration"]').attr('content');
+    if (dur) item.dimensions = isoDuration(dur);
+  }
   return prune(item);
 }
 
