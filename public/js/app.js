@@ -8,13 +8,15 @@ import { openStylePicker, openInText, openImport, pickProject } from './dialogs.
 import { sourceBadge, fixAll, openPaperCheck } from './audit.js';
 import { formatBibliography } from './formatter.js';
 import { DEGREES } from './degrees.js';
+import { quotesHtml, openQuoteForm, deleteQuote, copyQuote, quotesExport } from './quotes.js';
+import { readPdf } from './pdf.js';
 
 let cloudMod = null; // optional Firebase sync, loaded lazily so the app works offline
 
 const ui = {
   tab: 'all', query: '', loading: false, results: null, resultsFor: '', kb: -1,
   fmt: null, fmtFor: null, formatting: false,
-  selected: new Set(), filter: '', tagFilter: null, incompleteOnly: false, fixing: null, sideFilter: '', editingNote: null, showProjectNotes: false,
+  selected: new Set(), openQuotes: new Set(), filter: '', tagFilter: null, incompleteOnly: false, fixing: null, sideFilter: '', editingNote: null, showProjectNotes: false,
   flash: null,
 };
 
@@ -314,6 +316,7 @@ function renderCiteCard() {
     <div class="cite-foot">
       <span id="citeHint">${hintFor(ui.query)}</span>
       <span style="display:flex;gap:14px">
+        <button class="link" data-pdf>${icon('doc')} Cite a PDF</button>
         <button class="link" data-manual>${icon('pencil')} Cite manually</button>
         <button class="link" data-import>${icon('upload')} Import</button>
       </span>
@@ -432,8 +435,45 @@ function afterAdd(added) {
   renderCiteCard();
 }
 
+// Dropped/uploaded PDFs: find the DOI, arXiv ID, ISBN or title, then look it up
+async function citePdfs(files) {
+  const pdfs = files.filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
+  if (!pdfs.length) return toast('That isn’t a PDF — drop a .pdf file', { error: true });
+  for (const file of pdfs) {
+    ui.loading = true; ui.loadingKind = 'item'; renderCiteCard();
+    try {
+      const info = await readPdf(file);
+      let found = null, source = null, warnings = [];
+      for (const q of [info.doi, info.arxiv && `arXiv:${info.arxiv}`, info.isbn].filter(Boolean)) {
+        try { const r = await api(`/api/cite?q=${encodeURIComponent(q)}`); if (r.mode === 'item') { found = r.item; source = r.source; break; } } catch {}
+      }
+      if (!found && info.title) {
+        try { const r = await api(`/api/match-title?title=${encodeURIComponent(info.title)}`); if (r.item) { found = r.item; source = 'DOI'; warnings = [`Matched “${file.name}” to a published work by its title — check it’s the same one.`]; } } catch {}
+      }
+      if (!found) {
+        const [given, ...rest] = (info.author || '').split(/\s+/).reverse();
+        found = { type: 'report', title: info.title, ...(info.author ? { author: [rest.length ? { given: rest.reverse().join(' '), family: given } : { literal: info.author }] } : {}), ...(info.year ? { issued: { 'date-parts': [[+info.year]] } } : {}) };
+        source = 'PDF';
+        warnings = [`We couldn’t find “${file.name}” online, so we read what we could from the file. Fill in the author, date and publisher — and pick the right source type.`];
+      }
+      ui.loading = false; renderCiteCard();
+      await new Promise(resolve => {
+        const m = openEditor({ item: found, isNew: true, source, warnings, onSaved: afterAdd });
+        const close = m.close; m.close = (...a) => { close(...a); resolve(); };
+      });
+    } catch (e) {
+      ui.loading = false; renderCiteCard();
+      toast(`Couldn’t read ${file.name}: ${e.message}`, { error: true });
+    }
+  }
+}
+
 function wireCiteCard() {
   const c = $('#citeCard');
+  // Drag a PDF anywhere onto the cite box
+  c.addEventListener('dragover', e => { if ([...(e.dataTransfer?.items || [])].some(i => i.kind === 'file')) { e.preventDefault(); c.classList.add('dropping'); } });
+  c.addEventListener('dragleave', e => { if (!c.contains(e.relatedTarget)) c.classList.remove('dropping'); });
+  c.addEventListener('drop', e => { if (!e.dataTransfer?.files?.length) return; e.preventDefault(); c.classList.remove('dropping'); citePdfs([...e.dataTransfer.files]); });
   c.addEventListener('click', e => {
     const tab = e.target.closest('[data-tab]');
     if (tab) { ui.tab = tab.dataset.tab; renderCiteCard(); $('#citeInput').focus(); return; }
@@ -448,6 +488,13 @@ function wireCiteCard() {
       return;
     }
     if (e.target.closest('[data-import]')) return openImport();
+    if (e.target.closest('[data-pdf]')) {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'application/pdf,.pdf'; inp.multiple = true;
+      inp.onchange = () => citePdfs([...inp.files]);
+      inp.click();
+      return;
+    }
     const res = e.target.closest('[data-result]');
     if (res) pickResult(+res.dataset.result);
   });
@@ -509,7 +556,7 @@ function sortedItems() {
   const by = ui.fmt?.projectId === p.id ? ui.fmt.byId : new Map();
   let items = [...p.items];
   const f = ui.filter.toLowerCase();
-  if (f) items = items.filter(i => (by.get(i.id)?.text || i.title || '').toLowerCase().includes(f) || (i._note || '').toLowerCase().includes(f) || (i._tags || []).some(t => t.toLowerCase().includes(f)));
+  if (f) items = items.filter(i => (by.get(i.id)?.text || i.title || '').toLowerCase().includes(f) || (i._note || '').toLowerCase().includes(f) || (i._tags || []).some(t => t.toLowerCase().includes(f)) || (i._quotes || []).some(q => `${q.text} ${q.comment || ''}`.toLowerCase().includes(f)));
   if (ui.tagFilter) items = items.filter(i => (i._tags || []).includes(ui.tagFilter));
   if (ui.incompleteOnly) items = items.filter(i => missingInfo(i).length);
   const first = i => { const a = (i.author || i.editor || [])[0]; return (a ? (a.family || a.literal || '') : i.title || '').toLowerCase(); };
@@ -558,11 +605,13 @@ function citeHtml(item) {
         ${ui.editingNote === item.id
           ? `<div class="note-edit"><textarea data-note-input placeholder="Write a note — key quotes, page numbers, why it matters…">${esc(item._note || '')}</textarea><div class="row"><button class="btn btn-sm" data-note-cancel>Cancel</button><button class="btn btn-sm btn-primary" data-note-save>Save note</button></div></div>`
           : item._note ? `<div class="note" data-note title="Click to edit note">${icon('note')}<span>${esc(item._note)}</span></div>` : ''}
+        ${quotesHtml(item, ui.openQuotes.has(item.id))}
       </div>
       <div class="cite-actions">
         <button class="icon-btn" data-copy title="Copy citation" aria-label="Copy citation">${icon('copy')}</button>
         <button class="icon-btn" data-intext title="In-text citation" aria-label="In-text citation">${icon('quote')}</button>
         <button class="icon-btn ${item._note ? 'on' : ''}" data-note title="${item._note ? 'Edit note' : 'Add note'}" aria-label="Note">${icon('note')}</button>
+        <button class="icon-btn ${item._quotes?.length ? 'on' : ''}" data-quote-add title="Save a quote with its page number" aria-label="Save a quote">${icon('bookmark')}</button>
         <button class="icon-btn" data-edit title="Edit" aria-label="Edit citation">${icon('pencil')}</button>
         <button class="icon-btn" data-more title="More" aria-label="More options">${icon('more')}</button>
       </div>
@@ -720,6 +769,7 @@ function exportMenu(anchor, items) {
     { label: 'Plain text (.txt)', icon: 'doc', onClick: () => download(`${name}.txt`, `${headingFor(p.style)}\n\n${bibTextFor(items)}\n`) },
     { label: 'Web page (.html)', icon: 'globe', onClick: () => download(`${name}.html`, `<!doctype html><meta charset="utf-8"><title>${esc(p.name)}</title><body style="max-width:7in;margin:1in auto"><h1 style="text-align:center;font:bold 12pt 'Times New Roman',serif">${esc(headingFor(p.style))}</h1>${bibHtmlFor(items)}</body>`, 'text/html') },
     { label: 'Print / save as PDF', icon: 'printer', onClick: () => printItems(items) },
+    items.some(i => i._quotes?.length) && { label: 'Saved quotes, cited (.txt)', icon: 'bookmark', onClick: async () => download(`${name} – quotes.txt`, await quotesExport(items, ui.fmt)) },
     { label: 'Reference managers', heading: true },
     { label: 'BibTeX (.bib)', icon: 'code', onClick: () => viaServer('bibtex', 'bib', 'application/x-bibtex') },
     { label: 'BibLaTeX (.bib)', icon: 'code', onClick: () => viaServer('biblatex', 'bib', 'application/x-bibtex') },
@@ -742,6 +792,7 @@ function citeMenu(anchor, id) {
   openMenu(anchor, [
     { label: 'Edit citation', icon: 'pencil', onClick: () => openEditor({ item: it }) },
     { label: it._note ? 'Edit note' : 'Add note', icon: 'note', onClick: () => startNote(id) },
+    { label: 'Save a quote…', icon: 'bookmark', onClick: () => { ui.openQuotes.add(id); openQuoteForm(it); } },
     { label: 'Add tag…', icon: 'tag', onClick: () => tagItems([id]) },
     { label: 'Sentence-case title', icon: 'type', onClick: () => sentenceCaseItems([it]) },
     { label: 'In-text citation', icon: 'quote', onClick: () => openInText(it) },
@@ -858,6 +909,11 @@ function wireBib() {
     if ('copy' in d && item) return copyItems([item]);
     if ('intext' in d && item) return openInText(item);
     if ('note' in d && item) return startNote(id);
+    if ('quoteAdd' in d && item) { ui.openQuotes.add(id); return openQuoteForm(item); }
+    if ('quotesToggle' in d) { ui.openQuotes.has(id) ? ui.openQuotes.delete(id) : ui.openQuotes.add(id); renderBib(); return; }
+    if (d.quoteCopy && item) return copyQuote(item, d.quoteCopy, ui.fmt);
+    if (d.quoteEdit && item) return openQuoteForm(item, d.quoteEdit);
+    if (d.quoteDelete && item) return deleteQuote(item, d.quoteDelete);
     if ('noteCancel' in d) { ui.editingNote = null; renderBib(); return; }
     if ('noteSave' in d) {
       const v = $('[data-note-input]', card).value.trim();

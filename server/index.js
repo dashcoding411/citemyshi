@@ -3,7 +3,7 @@ import compression from 'compression';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { citeUrl } from './extract.js';
-import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search } from './lookup.js';
+import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search, findByTitle } from './lookup.js';
 import { searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
 import { toDocx, toFormat, parseImport } from './export.js';
 import { normalizeTitleCase, toSentenceCase } from './casing.js';
@@ -57,6 +57,7 @@ setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (v.eve
 app.use('/api/cite', rateLimit(90, 60_000)); // includes search-as-you-type
 app.use('/api/export', rateLimit(60, 60_000));
 app.use('/api/import', rateLimit(20, 60_000));
+app.use('/api/match-title', rateLimit(30, 60_000));
 app.get('/healthz', (req, res) => res.send('ok'));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.text({ limit: '5mb', type: 'text/*' }));
@@ -118,6 +119,14 @@ app.get('/api/csl/:name', wrap(async (req, res) => {
   const s = await loadStyle(req.params.name);
   res.setHeader('Cache-Control', 'public, max-age=86400');
   return { name: s.name, title: s.title, isNote: s.isNote, defaultLocale: s.defaultLocale, xml: s.xml };
+}));
+
+// Find the published version of a document from its title (used for dropped PDFs)
+app.get('/api/match-title', wrap(async req => {
+  const title = String(req.query.title || '').trim().slice(0, 400);
+  if (title.length < 10) return { item: null };
+  const item = await cached(`title|${title.toLowerCase()}`, 6 * 3600_000, () => findByTitle(title).catch(() => null));
+  return { item: item ? normalizeTitleCase(item) : null, source: item ? 'DOI' : null };
 }));
 
 app.post('/api/sentence-case', wrap(async req => ({ text: toSentenceCase(String(req.body?.text || '').slice(0, 2000)) })));
