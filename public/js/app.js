@@ -7,6 +7,7 @@ import { openEditor } from './editor.js';
 import { openStylePicker, openInText, openImport, pickProject } from './dialogs.js';
 import { sourceBadge, fixAll, openPaperCheck } from './audit.js';
 import { formatBibliography } from './formatter.js';
+import { DEGREES } from './degrees.js';
 
 let cloudMod = null; // optional Firebase sync, loaded lazily so the app works offline
 
@@ -253,9 +254,12 @@ function renderTopbar() {
         <button class="cite-foot-link" data-proj-notes style="background:none;border:0;padding:0;color:${p.notes ? 'var(--brand)' : 'var(--muted)'};display:inline-flex;gap:4px;align-items:center;font-size:13px">${icon('note')} ${p.notes ? 'Project notes' : 'Add project notes'}</button>
       </div>
     </div>
-    <button class="style-btn" data-style title="Change citation style">
-      <span style="min-width:0"><span class="lbl">Citation style</span><span class="val">${esc(p.styleTitle || p.style)}</span></span>${icon('chevronDown')}
-    </button>
+    <div class="style-wrap">
+      <button class="style-btn" data-style title="Change citation style">
+        <span style="min-width:0"><span class="lbl">Citation style</span><span class="val">${esc(p.styleTitle || p.style)}</span></span>${icon('chevronDown')}
+      </button>
+      <button class="style-help" data-style-help>Not sure which style?</button>
+    </div>
     ${ui.showProjectNotes ? '' : ''}`;
   const notesHost = $('#projNotes');
   if (ui.showProjectNotes) {
@@ -264,10 +268,26 @@ function renderTopbar() {
   } else notesHost?.remove();
 }
 
+// Quick guide: which style each field usually uses
+function openStyleHelp() {
+  const p = active();
+  const m = openModal({
+    title: 'Which citation style should I use?',
+    wide: true,
+    body: `<p style="margin:0 0 14px;color:var(--text-2)">Your unit guide or assignment brief always wins — but these are the styles each field most often uses. Click one to use it for <b>${esc(p.name)}</b>.</p>
+      <div class="style-help-grid">${DEGREES.map(d => `<div class="style-help-card"><div class="t">${icon(d.icon)} ${esc(d.label)}</div>${d.styles.slice(0, 3).map(([n, t, region]) => `<button class="chip ${p.style === n ? 'active' : ''}" data-use-style="${n}" data-title="${esc(t)}">${esc(t)}${region ? ` · ${esc(region)}` : ''}</button>`).join('')}</div>`).join('')}</div>
+      <p style="margin:14px 0 0;color:var(--muted);font-size:13px">Your uni has its own version (e.g. “Monash Harvard”)? Open <b>Citation style → Universities</b> and search for it.</p>`,
+    foot: '<span class="spacer"></span><button class="btn" data-close-btn>Close</button>',
+  });
+  $$('[data-use-style]', m.el).forEach(b => b.onclick = () => { S.updateProject(p.id, { style: b.dataset.useStyle, styleTitle: b.dataset.title }); m.close(); toast(`Style changed to ${b.dataset.title}`); });
+  $('[data-close-btn]', m.el).onclick = () => m.close();
+}
+
 function wireTopbar() {
   const tb = $('#topbar');
   tb.addEventListener('click', e => {
     if (e.target.closest('[data-style]')) openStylePicker();
+    if (e.target.closest('[data-style-help]')) openStyleHelp();
     if (e.target.closest('[data-nav]')) document.body.classList.add('nav-open');
     if (e.target.closest('[data-proj-notes]')) { ui.showProjectNotes = !ui.showProjectNotes; renderTopbar(); if (ui.showProjectNotes) $('#projNotes textarea')?.focus(); }
   });
@@ -292,14 +312,52 @@ function renderCiteCard() {
       <button class="btn btn-primary btn-lg" type="submit" ${ui.loading ? 'disabled' : ''}>${ui.loading ? '<span class="spinner"></span> Finding…' : `${icon('quote')} Cite`}</button>
     </form>
     <div class="cite-foot">
-      <span>Paste a link, DOI, ISBN, PubMed ID or arXiv ID — or search by title. <span class="kbd">/</span> to focus</span>
+      <span id="citeHint">${hintFor(ui.query)}</span>
       <span style="display:flex;gap:14px">
         <button class="link" data-manual>${icon('pencil')} Cite manually</button>
         <button class="link" data-import>${icon('upload')} Import</button>
       </span>
     </div>
-    ${renderResults()}`;
+    <div id="citeResults">${renderResults()}</div>`;
 }
+
+// What the cite box thinks you typed — mirrors the server's detection
+function detectKind(q) {
+  const s = q.trim();
+  if (!s) return null;
+  if (/^(https?:\/\/)?(dx\.)?doi\.org\/10\.|^(doi:\s*)?10\.\d{4,9}\/\S+$/i.test(s)) return ['journal', 'DOI — press Enter to cite the article'];
+  if (/^https?:\/\/|^www\.|^[a-z0-9-]+(\.[a-z0-9-]+)+\/\S*$/i.test(s)) {
+    if (/austlii|jade\.io|legislation\./i.test(s)) return ['law', 'Legal database link — press Enter'];
+    if (/youtu\.?be|vimeo|ted\.com/i.test(s)) return ['video', 'Video link — press Enter'];
+    return ['globe', 'Website link — press Enter and we’ll scan the page'];
+  }
+  if (/^(isbn(-1[03])?:?\s*)?(97[89][\d -]{10,14}|[\d -]{9,12}[\dXx])$/i.test(s) && s.replace(/\D/g, '').length >= 9) return ['book', 'ISBN — press Enter to cite the book'];
+  if (/^pmid:?\s*\d+$/i.test(s)) return ['journal', 'PubMed ID — press Enter'];
+  if (/^(arxiv:\s*)?\d{4}\.\d{4,5}(v\d+)?$/i.test(s)) return ['journal', 'arXiv preprint — press Enter'];
+  if (/\b(Act|Regulations?|Rules|Ordinance|Code|Bill)\s+\d{4}\b/.test(s)) return ['law', 'Legislation — press Enter (add a pinpoint like s 9 later in the footnote)'];
+  if (/\s\[\d{4}\]\s+[A-Z]|\(\d{4}\)\s+\d+\s+[A-Z]/.test(s)) return ['law', 'Court case — press Enter'];
+  return ['search', 'Searching books and journal articles as you type — pick a result or press Enter for more'];
+}
+function hintFor(q) {
+  const k = detectKind(q || '');
+  if (!k) return 'Paste a link, DOI, ISBN, PubMed or arXiv ID, an Act or case — or start typing a title. <span class="kbd">/</span> to focus';
+  return `${icon(k[0])} ${esc(k[1])}`;
+}
+
+// Live suggestions while typing a title (no need to press Enter)
+let suggestSeq = 0;
+const suggest = debounce(async () => {
+  const q = ui.query.trim();
+  const kind = detectKind(q);
+  if (!kind || kind[0] !== 'search' || q.length < 4 || ui.loading) return;
+  const my = ++suggestSeq;
+  try {
+    const r = await api(`/api/cite?q=${encodeURIComponent(q)}&kind=${CITE_TABS.find(t => t.id === ui.tab).kind}`);
+    if (my !== suggestSeq || ui.query.trim() !== q || r.mode !== 'results') return;
+    ui.results = r.results; ui.resultsFor = q; ui.kb = -1; ui.live = true;
+    const box = $('#citeResults'); if (box) box.innerHTML = renderResults();
+  } catch {}
+}, 450);
 
 function renderResults() {
   if (ui.loading && ui.loadingKind === 'search') return `<div class="results"><div class="results-head">Searching…</div>${'<div class="skel"><div style="width:65%"></div><div style="width:40%"></div></div>'.repeat(3)}</div>`;
@@ -317,7 +375,7 @@ function renderResults() {
         <div class="result-thumb">${icon(r.kind === 'book' ? 'book' : 'journal')}${it._thumb ? `<img src="${esc(it._thumb)}" alt="" loading="lazy" onerror="this.remove()" onload="if(this.naturalWidth<5)this.remove()">` : ''}</div>
         <div class="result-body">
           <div class="result-title">${esc(it.title)}</div>
-          <div class="result-meta"><span class="badge ${r.kind}">${r.kind === 'book' ? 'Book' : sourceTypeFor(it).label}</span> ${esc([authors, year, where].filter(Boolean).join(' · '))}</div>
+          <div class="result-meta"><span class="badge ${it.type === 'book' || r.kind === 'book' ? 'book' : 'journal'}">${r.kind === 'book' ? 'Book' : sourceTypeFor(it).label}</span> ${esc([authors, year, where].filter(Boolean).join(' · '))}</div>
         </div>
         <button class="btn btn-sm btn-primary" tabindex="-1">${icon('quote')} Cite</button>
       </div>`;
@@ -384,7 +442,7 @@ function wireCiteCard() {
     if (e.target.closest('[data-manual]')) {
       const map = { website: 'website', book: 'book', journal: 'journal', video: 'video', law: 'legislation', all: 'website' };
       const t = SOURCE_TYPES.find(s => s.id === map[ui.tab]);
-      const item = { type: t.csl, ...(t.genre ? { genre: t.genre } : {}) };
+      const item = { type: t.csl, ...(t.genre ? { genre: t.genre } : {}), ...(t.preset || {}) };
       if (/^https?:\/\//.test(ui.query)) item.URL = ui.query.trim(); else if (ui.query.trim()) item.title = ui.query.trim();
       openEditor({ item, isNew: true, onSaved: afterAdd });
       return;
@@ -399,6 +457,9 @@ function wireCiteCard() {
     const had = !!ui.query;
     ui.query = e.target.value;
     if (had !== !!ui.query) { const pos = e.target.selectionStart; renderCiteCard(); const i = $('#citeInput'); i.focus(); i.setSelectionRange(pos, pos); }
+    const hint = $('#citeHint'); if (hint) hint.innerHTML = hintFor(ui.query);
+    if (!ui.query.trim()) { ui.results = null; const box = $('#citeResults'); if (box) box.innerHTML = ''; }
+    suggest();
   });
   c.addEventListener('paste', e => {
     if (e.target.id !== 'citeInput') return;
@@ -484,7 +545,9 @@ function citeHtml(item) {
     <article class="cite ${sel ? 'selected' : ''} ${ui.flash === item.id ? 'flash' : ''}" data-id="${item.id}" draggable="true">
       <label class="check"><input type="checkbox" ${sel ? 'checked' : ''} data-select aria-label="Select citation"></label>
       <div class="cite-body">
-        <div class="csl ${hanging ? 'hanging' : ''} ${state.serif ? 'serif' : ''}">${f ? linkify(f.html) : `<span style="color:var(--muted)">${esc(item.title || 'Untitled')}</span>`}</div>
+        <div class="csl ${hanging ? 'hanging' : ''} ${state.serif ? 'serif' : ''}">${f?.inBibliography === false
+          ? `<div class="intext-only">${icon('info')}<span><b>${ui.fmt.style.isNote ? 'Footnotes only' : 'In-text only'}:</b> ${esc(p.styleTitle || ui.fmt.style.title)} doesn’t put this in the ${esc(headingFor(p.style).toLowerCase())}${/personal_communication|interview/.test(item.type) ? ' (personal communications can’t be looked up by readers)' : ''}. Cite it as <span class="csl" style="font-size:inherit">${f.intext.paren}</span></span></div>`
+          : f ? linkify(f.html) : `<span style="color:var(--muted)">${esc(item.title || 'Untitled')}</span>`}</div>
         <div class="cite-meta">
           <span class="type-pill">${icon(t.icon)} ${esc(t.label)}</span>
           ${sourceBadge(item)}
@@ -525,6 +588,12 @@ function renderBib() {
         <button class="btn btn-sm" data-example="https://en.wikipedia.org/wiki/Citation">${icon('globe')} Try a website</button>
         <button class="btn btn-sm" data-example="9780141439518">${icon('book')} Try an ISBN</button>
         <button class="btn btn-sm" data-example="10.1038/nature14539">${icon('journal')} Try a DOI</button>
+        <button class="btn btn-sm" data-example="Corporations Act 2001 (Cth)">${icon('law')} Try an Act</button>
+      </div>
+      <div class="study-pick">
+        <div class="study-q">${icon('grad')} What are you studying? We’ll set the style most courses in that area use.</div>
+        <div class="examples">${DEGREES.map(d => `<button class="chip deg-chip ${p.style === d.styles[0][0] ? 'active' : ''}" data-degree="${d.id}">${esc(d.label)}</button>`).join('')}</div>
+        <div class="study-note">Always check your unit guide — some courses ask for a specific style. Current style: <b>${esc(p.styleTitle || p.style)}</b>.</div>
       </div>
     </div>`;
   } else if (!items.length) {
@@ -617,7 +686,7 @@ function bibHtmlFor(items) {
   const font = "font-family:'Times New Roman',serif;font-size:12pt";
   return bibSections(items).map(([heading, list]) => (heading ? `<p style="${font};font-weight:bold;margin:12px 0 8px">${esc(heading)}</p>` : '') + list.map(i => {
     const f = ui.fmt?.byId.get(i.id);
-    if (!f) return '';
+    if (!f || f.inBibliography === false) return '';
     const inner = f.html.replace(/^<div class="csl-entry">|<\/div>\s*$/g, '').replace(/<div class="csl-left-margin">(.*?)<\/div><div class="csl-right-inline">/g, '$1 ').replace(/<\/?div[^>]*>/g, '');
     return `<p style="${hanging ? 'padding-left:0.5in;text-indent:-0.5in;' : ''}${spacing}margin:0 0 ${spacing ? 0 : 8}px;${font}">${inner}</p>`;
   }).join('')).join('');
@@ -642,7 +711,7 @@ function exportMenu(anchor, items) {
     { label: 'Word document (.docx)', icon: 'file', onClick: async () => {
       try {
         if (!ui.fmt) throw new Error('Still formatting — try again in a second');
-        const entries = bibSections(items).flatMap(([heading, list]) => [...(heading ? [{ heading }] : []), ...list.map(i => ui.fmt.byId.get(i.id)).filter(Boolean).map(e => ({ html: e.html }))]);
+        const entries = bibSections(items).flatMap(([heading, list]) => [...(heading ? [{ heading }] : []), ...list.map(i => ui.fmt.byId.get(i.id)).filter(e => e && e.inBibliography !== false).map(e => ({ html: e.html }))]);
         const res = await api('/api/export/docx', { body: { entries, params: ui.fmt.params, style: p.style, title: headingFor(p.style), filename: name }, raw: true });
         download(`${name}.docx`, await res.blob());
       } catch (e) { toast(e.message, { error: true }); }
@@ -776,6 +845,14 @@ function wireBib() {
     const item = id && p.items.find(i => i.id === id);
     const d = el.dataset;
     if ('example' in d) { ui.query = d.example; ui.tab = 'all'; renderCiteCard(); runCite(); return; }
+    if ('degree' in d) {
+      const deg = DEGREES.find(x => x.id === d.degree);
+      const [name, title] = deg.styles[0];
+      S.updateProject(p.id, { style: name, styleTitle: title });
+      state.styleTab = deg.id; S.save();
+      toast(`${deg.label}: set to ${title} — the most common style for ${deg.label.toLowerCase()}. Other options are under “Citation style”.`, { duration: 6000 });
+      return;
+    }
     if ('select' in d) { el.checked ? ui.selected.add(id) : ui.selected.delete(id); renderBib(); return; }
     if ('selectAll' in d) { const items = sortedItems(); if (el.checked) items.forEach(i => ui.selected.add(i.id)); else ui.selected.clear(); renderBib(); return; }
     if ('copy' in d && item) return copyItems([item]);

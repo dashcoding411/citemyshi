@@ -32,6 +32,7 @@ export const FIELD_DEFS = {
   version: { label: 'Version' },
   archive: { label: 'Archive / database' },
   archive_location: { label: 'Archive location' },
+  'archive-place': { label: 'Archive / museum location', placeholder: 'e.g. New York' },
   language: { label: 'Language', placeholder: 'e.g. en' },
   'title-short': { label: 'Short title' },
   'container-title-short': { label: 'Short container title' },
@@ -48,9 +49,9 @@ export const SOURCE_TYPES = [
   { id: 'newspaper', label: 'Newspaper article', icon: 'news', csl: 'article-newspaper', container: 'Newspaper name', fields: ['title', 'container-title', 'section', 'page', 'issued', 'URL', 'accessed'], important: ['title', 'container-title', 'issued', 'author'] },
   { id: 'magazine', label: 'Magazine article', icon: 'news', csl: 'article-magazine', container: 'Magazine name', fields: ['title', 'container-title', 'volume', 'issue', 'page', 'issued', 'URL', 'accessed'], important: ['title', 'container-title', 'issued', 'author'] },
   { id: 'video', label: 'Online video', icon: 'video', csl: 'webpage', genre: 'Video', container: 'Platform', fields: ['title', 'container-title', 'issued', 'dimensions', 'URL', 'accessed'], important: ['title', 'container-title', 'URL', 'issued', 'author'] },
-  { id: 'film', label: 'Film / movie', icon: 'film', csl: 'motion_picture', fields: ['title', 'publisher', 'issued', 'medium', 'dimensions', 'URL'], important: ['title', 'issued', 'publisher'] },
-  { id: 'tv', label: 'TV / radio episode', icon: 'film', csl: 'broadcast', container: 'Series title', fields: ['title', 'container-title', 'number', 'publisher', 'issued', 'URL'], important: ['title', 'container-title', 'issued'] },
-  { id: 'podcast', label: 'Podcast episode', icon: 'mic', csl: 'broadcast', genre: 'Podcast', container: 'Podcast name', fields: ['title', 'container-title', 'number', 'publisher', 'issued', 'dimensions', 'URL'], important: ['title', 'container-title', 'issued', 'URL'] },
+  { id: 'film', label: 'Film / movie', icon: 'film', csl: 'motion_picture', preset: { genre: 'Film' }, fields: ['title', 'publisher', 'issued', 'genre', 'dimensions', 'URL'], important: ['title', 'issued', 'publisher'], labels: { publisher: 'Production company', genre: 'Description (e.g. Film, Documentary)' } },
+  { id: 'tv', label: 'TV / radio episode', icon: 'film', csl: 'broadcast', preset: { medium: 'TV series episode' }, container: 'Series title', fields: ['title', 'container-title', 'number', 'publisher', 'issued', 'medium', 'URL'], important: ['title', 'container-title', 'issued'], labels: { number: 'Season and episode (e.g. Season 4, Episode 5)', publisher: 'Network / broadcaster', medium: 'Description' } },
+  { id: 'podcast', label: 'Podcast episode', icon: 'mic', csl: 'broadcast', preset: { medium: 'Audio podcast episode' }, container: 'Podcast name', fields: ['title', 'container-title', 'number', 'publisher', 'issued', 'dimensions', 'URL'], important: ['title', 'container-title', 'issued', 'URL'], labels: { number: 'Episode number', publisher: 'Production company / network' } },
   { id: 'blog', label: 'Blog post', icon: 'pen', csl: 'post-weblog', container: 'Blog name', fields: ['title', 'container-title', 'issued', 'URL', 'accessed'], important: ['title', 'container-title', 'URL', 'issued', 'author'] },
   { id: 'social', label: 'Social media post', icon: 'chat', csl: 'post', container: 'Platform', fields: ['title', 'container-title', 'issued', 'URL', 'accessed'], important: ['title', 'URL', 'issued', 'author'] },
   { id: 'encyclopedia', label: 'Encyclopedia entry', icon: 'book', csl: 'entry-encyclopedia', container: 'Encyclopedia', fields: ['title', 'container-title', 'edition', 'publisher', 'issued', 'URL', 'accessed'], important: ['title', 'container-title'] },
@@ -61,8 +62,8 @@ export const SOURCE_TYPES = [
   { id: 'preprint', label: 'Preprint', icon: 'doc', csl: 'article', fields: ['title', 'publisher', 'number', 'issued', 'DOI', 'URL'], important: ['title', 'author', 'issued', 'publisher'], labels: { publisher: 'Repository', number: 'Identifier' } },
   { id: 'dataset', label: 'Dataset', icon: 'data', csl: 'dataset', fields: ['title', 'version', 'publisher', 'issued', 'DOI', 'URL'], important: ['title', 'publisher', 'issued'] },
   { id: 'software', label: 'Software / app', icon: 'code', csl: 'software', fields: ['title', 'version', 'publisher', 'issued', 'URL'], important: ['title', 'issued'] },
-  { id: 'image', label: 'Image / artwork', icon: 'image', csl: 'graphic', container: 'Museum / website', fields: ['title', 'container-title', 'medium', 'dimensions', 'archive', 'issued', 'URL'], important: ['title', 'issued'], labels: { dimensions: 'Dimensions' } },
-  { id: 'song', label: 'Song / album', icon: 'music', csl: 'song', container: 'Album', fields: ['title', 'container-title', 'publisher', 'medium', 'issued', 'URL'], important: ['title', 'issued'] },
+  { id: 'image', label: 'Image / artwork', icon: 'image', csl: 'graphic', container: 'Website (if seen online)', fields: ['title', 'genre', 'medium', 'issued', 'archive', 'archive-place', 'container-title', 'URL'], important: ['title', 'issued'], labels: { genre: 'Type of work (e.g. Painting, Photograph)', medium: 'Materials (e.g. Oil on canvas)', archive: 'Museum / gallery / collection', dimensions: 'Dimensions' } },
+  { id: 'song', label: 'Song / album', icon: 'music', csl: 'song', preset: { genre: 'Song' }, container: 'Album', fields: ['title', 'container-title', 'publisher', 'genre', 'issued', 'URL'], important: ['title', 'issued'], labels: { publisher: 'Record label', genre: 'Description (e.g. Song, Album)' } },
   { id: 'interview', label: 'Interview', icon: 'mic', csl: 'interview', container: 'Published in', fields: ['title', 'container-title', 'medium', 'issued', 'URL'], important: ['title', 'issued'] },
   { id: 'speech', label: 'Speech / lecture', icon: 'mic', csl: 'speech', fields: ['title', 'genre', 'event-title', 'event-place', 'issued', 'URL'], important: ['title', 'issued'] },
   { id: 'letter', label: 'Letter / email', icon: 'mail', csl: 'personal_communication', fields: ['title', 'genre', 'issued'], important: ['issued'] },
@@ -98,7 +99,7 @@ export const ROLE_KEYS = ROLES.map(r => r[0]);
 
 export function sourceTypeFor(item) {
   if (item.type === 'webpage' && /video/i.test(item.genre || '')) return SOURCE_TYPES.find(t => t.id === 'video');
-  if (item.type === 'broadcast' && /podcast/i.test(item.genre || '')) return SOURCE_TYPES.find(t => t.id === 'podcast');
+  if (item.type === 'broadcast') return SOURCE_TYPES.find(t => t.id === (/podcast/i.test(`${item.genre || ''} ${item.medium || ''}`) ? 'podcast' : 'tv'));
   if (item.type === 'bill') return SOURCE_TYPES.find(t => t.id === 'bill');
   return SOURCE_TYPES.find(t => t.csl === item.type && !t.genre) || SOURCE_TYPES.find(t => t.csl === item.type) || SOURCE_TYPES.find(t => t.id === 'document');
 }
@@ -115,4 +116,47 @@ export function missingInfo(item) {
     if (v == null || v === '' || (f === 'issued' && !v['date-parts']?.[0]?.[0] && !v.literal)) missing.push(f);
   }
   return missing.map(f => f === 'author' ? 'Author' : (t.labels?.[f] || (f === 'container-title' ? t.container : null) || FIELD_DEFS[f]?.label || f));
+}
+
+// Short, practical advice shown in the editor for each kind of source
+const TYPE_TIPS = {
+  website: 'No named author? Leave it blank — the title moves to the front. Only use an organisation as author if it wrote the page.',
+  book: 'Only add an edition if it isn’t the first. Use the publisher’s name, not the printer’s.',
+  chapter: 'Put the chapter’s author as Author and the book’s editors as Editor (choose the role on the left).',
+  journal: 'Add the DOI if the article has one — APA, Harvard and Vancouver expect it. Volume, issue and pages matter too.',
+  newspaper: 'Online news: include the URL. Print edition: add the page number instead.',
+  magazine: 'Add volume and issue if the magazine prints them.',
+  video: 'The author is the person or channel that uploaded it.',
+  film: 'The director goes in Contributors with the role “Director”. Production company goes in Production company.',
+  tv: 'Add the writer and director as contributors. Season and episode go together, e.g. “Season 4, Episode 5”.',
+  podcast: 'The host goes in Contributors. Add the episode number if there is one.',
+  blog: 'Blog name goes in Blog name; the post title in Title.',
+  social: 'Use the first 20 or so words of the post as the title. The account name is the author.',
+  encyclopedia: 'Most online encyclopedia entries have no author — that’s fine. Add the date you accessed it.',
+  dictionary: 'The entry word is the title. Dictionaries are usually undated online — add the date you accessed it.',
+  report: 'For government and organisation reports, the agency is usually the author. Add the report number if it has one.',
+  thesis: 'Put the university in University, and the kind of thesis (e.g. Doctoral dissertation, Master’s thesis) in Description.',
+  conference: 'The proceedings title goes in Proceedings title; the conference name in Conference / event.',
+  preprint: 'Preprints aren’t peer-reviewed — cite the published version instead if there is one (try its DOI).',
+  dataset: 'Add the version and the repository or organisation that publishes it.',
+  software: 'Add the version number you used.',
+  image: 'Artwork in a gallery: add the museum. Image found online: add the website and URL.',
+  interview: 'An interview you did yourself is a personal communication: APA and Chicago cite it in-text only.',
+  letter: 'Personal emails and letters are cited in-text only in APA and Chicago — they won’t appear in the reference list.',
+  legislation: 'Name without the year (e.g. Corporations Act), the year, and the jurisdiction (Cth, NSW…). Add section pinpoints like s 9 in the footnote/in-text dialog.',
+  bill: 'Name without the year, the year, and the jurisdiction.',
+  case: 'Reported: year, volume, report abbreviation and first page — (1992) 175 CLR 1. Unreported: year, court and number — [1992] HCA 23. Paragraph pinpoints go in the footnote dialog.',
+  manuscript: 'Add the archive or library that holds it, and its reference number.',
+};
+
+export function tipsFor(item, styleName = '') {
+  const t = sourceTypeFor(item);
+  const tips = [];
+  if (TYPE_TIPS[t.id]) tips.push(TYPE_TIPS[t.id]);
+  const s = styleName;
+  if (/^apa/.test(s) && ['website', 'journal', 'book', 'chapter', 'report', 'newspaper'].includes(t.id)) tips.push('APA: titles of works are in sentence case — only the first word, the first word after a colon, and names are capitalised.');
+  if (/^modern-language/.test(s) && ['website', 'blog', 'video', 'newspaper'].includes(t.id)) tips.push('MLA: an access date is optional but recommended for pages without a publication date.');
+  if (/^australian-guide-to-legal/.test(s) && !['legislation', 'bill', 'case'].includes(t.id)) tips.push('AGLC: your bibliography is automatically split into A Articles/Books/Reports, B Cases, C Legislation, D Treaties and E Other.');
+  if (/^(ieee|nlm|american-medical|vancouver)/.test(s)) tips.push('Numbered style: references are numbered in the order you first cite them in your paper.');
+  return tips;
 }

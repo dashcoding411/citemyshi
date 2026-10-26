@@ -54,7 +54,7 @@ function rateLimit(max, windowMs) {
   };
 }
 setInterval(() => { const now = Date.now(); for (const [k, v] of hits) if (v.every(t => now - t > 60_000)) hits.delete(k); }, 60_000).unref();
-app.use('/api/cite', rateLimit(40, 60_000));
+app.use('/api/cite', rateLimit(90, 60_000)); // includes search-as-you-type
 app.use('/api/export', rateLimit(60, 60_000));
 app.use('/api/import', rateLimit(20, 60_000));
 app.get('/healthz', (req, res) => res.send('ok'));

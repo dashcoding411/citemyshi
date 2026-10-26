@@ -1,6 +1,6 @@
 import { $, $$, esc, api, debounce, openModal, toast, confirmDialog, tagColor } from './ui.js';
 import { icon } from './icons.js';
-import { SOURCE_TYPES, FIELD_DEFS, ROLES, ROLE_KEYS, sourceTypeFor, missingInfo } from './types.js';
+import { SOURCE_TYPES, FIELD_DEFS, ROLES, ROLE_KEYS, sourceTypeFor, missingInfo, tipsFor } from './types.js';
 import { state, active, project, addItems, replaceItem, removeItems, findDuplicate, allTags } from './store.js';
 import { formatBibliography } from './formatter.js';
 
@@ -73,6 +73,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
         <label for="ed-type" style="font-weight:600;font-size:13px;white-space:nowrap">Source type</label>
         <select class="select" id="ed-type">${SOURCE_TYPES.map(s => `<option value="${s.id}" ${s.id === t.id ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</select>
       </div>
+      ${tipsFor(w, p.style).map(tip => `<div class="tip">${icon('info')}<span>${esc(tip)}</span></div>`).join('')}
 
       <div class="form-section">
         <h3><span>Contributors ${missing.has('Author') ? '<span class="req" style="color:var(--warn);text-transform:none;letter-spacing:0">· missing</span>' : ''}</span></h3>
@@ -182,6 +183,9 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
       const old = sourceTypeFor(w);
       w.type = nt.csl;
       if (nt.genre) w.genre = nt.genre; else if (old.genre && w.genre === old.genre) delete w.genre;
+      // Labels the styles print, e.g. [Film], [TV series episode], [Song]
+      for (const [k, v] of Object.entries(old.preset || {})) if (w[k] === v) delete w[k];
+      for (const [k, v] of Object.entries(nt.preset || {})) if (!w[k]) w[k] = v;
       changed(); render();
     };
     $$('[data-f]', b).forEach(el => el.oninput = () => { const v = el.value; if (v.trim()) w[el.dataset.f] = v; else delete w[el.dataset.f]; changed(); });

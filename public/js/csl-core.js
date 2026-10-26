@@ -89,6 +89,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
       if (v.circa) out[d].circa = true;
     }
     out.type = out.type || 'webpage';
+    if (out['event-title'] && !out.event) out.event = out['event-title'];
     return out;
   }
 
@@ -135,6 +136,33 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
 
   // Styles whose official CSL file doesn't apply a capitalisation rule its
   // manual requires. Titles are stored in sentence case (the CSL convention).
+  const ordinal = n => `${n}${[, 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || [, 'st', 'nd', 'rd'][n % 100] || 'th'}`;
+
+  // APA, MLA, Chicago, Harvard, IEEE… only describe US legal materials and say to
+  // follow the local legal style for others — so Australian, UK and NZ Acts and
+  // cases are written the AGLC way, as Australian university guides teach.
+  const LEGAL_STYLE = /^(australian-guide-to-legal|oscola|bluebook|mcgill|new-zealand-law|cambridge-university-press-law)/;
+  const isUS = item => /^(US|USA|U\.S\.|United States)$/i.test(String(item['container-title'] || '')) || /United States Reports|Federal Reporter|Supreme Court Reporter|^U\.?S\.?$|^F\s?\d?d$|^S\s?Ct$/i.test(String(item['container-title-short'] || item['container-title'] || ''));
+  const esc = t => String(t).replace(/&/g, '&#38;').replace(/</g, '&#60;').replace(/>/g, '&#62;');
+  function localLegal(item) {
+    if (!['legislation', 'bill', 'legal_case'].includes(item.type) || isUS(item) || !item.title) return null;
+    const year = item.issued?.['date-parts']?.[0]?.[0];
+    if (item.type === 'legal_case') {
+      const report = item['container-title-short'] || item['container-title'];
+      let rest = '';
+      if (item.volume && report) rest = `(${year}) ${item.volume} ${report}${item.page ? ` ${item.page}` : ''}`;
+      else if (report) rest = `[${year}] ${report}${item.page ? ` ${item.page}` : ''}`;
+      else if (item.authority && item.number) rest = `[${year}] ${item.authority} ${item.number}`;
+      else if (year) rest = `(${year})`;
+      return { html: `<i>${esc(item.title)}</i>${rest ? ` ${esc(rest)}` : ''}`, text: `${item.title}${rest ? ` ${rest}` : ''}` };
+    }
+    const jur = item['container-title'] ? ` (${item['container-title']})` : '';
+    const name = `${item.title}${year ? ` ${year}` : ''}`;
+    return item.type === 'bill'
+      ? { html: `${esc(name)}${esc(jur)}`, text: `${name}${jur}` }
+      : { html: `<i>${esc(name)}</i>${esc(jur)}`, text: `${name}${jur}` };
+  }
+
   const MINOR = new Set(['a', 'an', 'the', 'and', 'but', 'or', 'nor', 'for', 'so', 'yet', 'as', 'at', 'by', 'in', 'of', 'off', 'on', 'per', 'to', 'up', 'via', 'vs', 'v', 'with', 'from', 'into', 'over']);
   const titleCase = t => String(t).replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (word, idx, all) => {
     const before = all.slice(0, idx).trimEnd();
@@ -146,6 +174,12 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     // Acts: the style prints the year itself, so "Corporations Act 2001" + 2001 would double it
     const year = item.issued?.['date-parts']?.[0]?.[0];
     if (['legislation', 'bill'].includes(item.type) && year && item.title && new RegExp(`\\s${year}$`).test(item.title.trim())) item = { ...item, title: item.title.trim().replace(new RegExp(`\\s${year}$`), '') };
+    // AGLC 4 r 6.3: "2nd ed" (the style would print "2ⁿᵈ edn")
+    if (/^australian-guide-to-legal/.test(style.name) && /^\d+$/.test(String(item.edition || ''))) item = { ...item, edition: `${ordinal(+item.edition)} ed` };
+    // IEEE adds "arXiv:" itself
+    if (/^ieee/.test(style.name) && /^arxiv:/i.test(String(item.number || ''))) item = { ...item, number: String(item.number).replace(/^arxiv:\s*/i, '') };
+    // MLA dates speeches and performances by the event
+    if (/^modern-language/.test(style.name) && item.type === 'speech' && item.issued && !item['event-date']) item = { ...item, 'event-date': item.issued };
     // IEEE: book, report and thesis titles are in Title Case (IEEE Reference Guide)
     if (/^ieee/.test(style.name) && ['book', 'report', 'thesis', 'manuscript'].includes(item.type) && item.title) return { ...item, title: titleCase(item.title) };
     return item;
@@ -163,11 +197,22 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     engine.setOutputFormat('html');
     let params = {}, html = [];
     const hasBib = !!engine.bibliography;
-    if (hasBib) { const bib = engine.makeBibliography(); if (bib) [params, html] = bib; }
-    const ids = hasBib && params.entry_ids ? params.entry_ids.map(x => String(x[0] ?? x)) : clean.map(i => i.id);
+    let bibFailed = false;
+    if (hasBib) { const bib = engine.makeBibliography(); if (bib) [params, html] = bib; else bibFailed = true; }
+    // citeproc lists every item in entry_ids but only outputs the ones the style
+    // includes; the skipped ones come back as "bibliography_errors". Drop them so
+    // each entry lines up with its own text.
+    const skipped = new Set((params.bibliography_errors || []).map(e => String(e.itemID)));
+    const ids = !hasBib ? clean.map(i => i.id)
+      : bibFailed ? []
+      : (params.entry_ids || []).map(x => String(x[0] ?? x)).filter(id => !skipped.has(id));
+    if (hasBib && ids.length !== html.length) console.warn('citemyshi: bibliography alignment mismatch', ids.length, html.length);
 
+    // Some sources are cited in-text only (APA personal communications, Chicago
+    // notes-only sources) — still give them their in-text citation
+    const outside = clean.map(i => i.id).filter(id => !ids.includes(id));
     const intext = {};
-    for (const id of ids) {
+    for (const id of [...ids, ...outside]) {
       try { intext[id] = inText(engine, style, { id }); } catch { intext[id] = { paren: '', narrative: '' }; }
     }
 
@@ -190,8 +235,33 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
         entrySpacing: params.entryspacing || 1,
         maxOffset: params.maxoffset || 0,
       },
-      entries: ids.map((id, i) => ({ id, html: (html[i] || '').trim(), text: decode((text[i] || '').trim()), intext: intext[id] })),
+      entries: [
+        ...ids.map((id, i) => fixLegal(style, clean, { id, html: (html[i] || '').trim(), text: decode((text[i] || '').trim()), intext: intext[id] })),
+        ...outside.map(id => fixLegal(style, clean, { id, html: '', text: '', intext: intext[id], inBibliography: false })),
+      ],
     };
+  }
+
+  function fixLegal(style, clean, entry, locator) {
+    if (LEGAL_STYLE.test(style.name)) return entry;
+    const item = clean.find(i => i.id === entry.id);
+    const legal = item && localLegal(item);
+    if (!legal) return entry;
+    const out = { ...entry };
+    if (entry.html) {
+      const margin = entry.html.match(/<div class="csl-left-margin">([\s\S]*?)<\/div>/);
+      out.html = margin ? `<div class="csl-entry"><div class="csl-left-margin">${margin[1]}</div><div class="csl-right-inline">${legal.html}.</div></div>` : `<div class="csl-entry">${legal.html}.</div>`;
+      out.text = `${margin ? `${decode(margin[1].replace(/<[^>]+>/g, ''))} ` : ''}${legal.text}.`;
+    }
+    // Numbered styles keep their [1]; author-date and note styles cite the Act/case itself
+    const numbered = /^\s*(<[^>]+>)*[[(]?\d+[\])]?(<\/[^>]+>)*\s*$/.test(entry.intext?.paren || '');
+    if (!numbered) {
+      const pin = locator ? ` ${locator}` : '';
+      out.intext = style.isNote
+        ? { paren: `${legal.html}${esc(pin)}.`, narrative: '' }
+        : { paren: `(${legal.html}${esc(pin)})`, narrative: `${legal.html}${esc(pin)}` };
+    }
+    return out;
   }
 
   async function intextOne({ item, style: styleName = 'apa', lang, locator, label = 'page' }) {
@@ -201,7 +271,8 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     engine.setOutputFormat('html');
     const cite = { id: clean.id };
     if (locator) { cite.locator = String(locator); cite.label = label; }
-    return { ...inText(engine, style, cite), isNote: style.isNote };
+    const r = fixLegal(style, [clean], { id: clean.id, intext: inText(engine, style, cite) }, locator);
+    return { ...r.intext, isNote: style.isNote };
   }
 
   async function styleInfo({ style: name }) {
