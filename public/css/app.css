@@ -219,6 +219,8 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); 
 .pl-result { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--border); }
 .pl-result .pl-n { padding-top: 2px; }
 @media (max-width: 900px) { .pl-row { grid-template-columns: 24px 1fr; } .pl-row input, .pl-row .pl-tools { grid-column: 2; } }
+.code-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1.5px dashed var(--brand); border-radius: 12px; background: var(--brand-soft); }
+.code-box .code { font: 700 22px/1 ui-monospace, Menlo, monospace; letter-spacing: .08em; color: var(--brand-ink); }
 .intext-only { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; color: var(--text-2); background: var(--sunken); border-radius: 9px; padding: 9px 12px; }
 .intext-only svg { margin-top: 2px; color: var(--brand); flex: none; }
 .cite-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }

@@ -57,10 +57,17 @@ export function createProject(name, folderId = null, inherit = active()) {
   return p;
 }
 
+// Fields that belong to a project's content (shared with a group) vs. this
+// person's view of it (folder, sorting) — see shared projects in cloud.js
+const META_KEYS = ['name', 'style', 'styleTitle', 'lang', 'notes', 'document'];
+export const SHARED_KEYS = [...META_KEYS, 'items', 'deletedItems', 'metaUpdatedAt', 'updatedAt'];
+export const touchMeta = p => { p.metaUpdatedAt = Date.now(); p.updatedAt = p.metaUpdatedAt; };
+
 export function updateProject(id, patch) {
   const p = project(id);
   if (!p) return;
   Object.assign(p, patch, { updatedAt: Date.now() });
+  if (META_KEYS.some(k => k in patch)) p.metaUpdatedAt = p.updatedAt;
   emit({ projects: true, project: id === state.activeId, format: 'style' in patch || 'lang' in patch });
 }
 
@@ -130,7 +137,7 @@ export function moveProject(projectId, folderId) {
 export function addItems(items, projectId = state.activeId) {
   const p = project(projectId);
   const now = Date.now();
-  const added = items.map((it, i) => ({ ...it, id: uid(), _added: now + i }));
+  const added = items.map((it, i) => ({ ...it, id: uid(), _added: now + i, _updated: now + i }));
   p.items.push(...added);
   p.updatedAt = now;
   emit({ projects: true, project: projectId === state.activeId, format: projectId === state.activeId });
@@ -141,7 +148,7 @@ export function updateItem(itemId, patch, projectId = state.activeId) {
   const p = project(projectId);
   const it = p.items.find(i => i.id === itemId);
   if (!it) return;
-  Object.assign(it, patch);
+  Object.assign(it, patch, { _updated: Date.now() });
   p.updatedAt = Date.now();
   emit({ project: true, format: true, projects: true });
 }
@@ -150,7 +157,7 @@ export function replaceItem(itemId, item, projectId = state.activeId) {
   const p = project(projectId);
   const idx = p.items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
-  p.items[idx] = { ...item, id: itemId, _added: p.items[idx]._added };
+  p.items[idx] = { ...item, id: itemId, _added: p.items[idx]._added, _updated: Date.now() };
   p.updatedAt = Date.now();
   emit({ project: true, format: true, projects: true });
 }
@@ -160,9 +167,11 @@ export function removeItems(ids, projectId = state.activeId) {
   const removed = [];
   p.items = p.items.filter((it, idx) => { if (ids.includes(it.id)) { removed.push({ it, idx }); return false; } return true; });
   p.updatedAt = Date.now();
+  p.deletedItems = { ...(p.deletedItems || {}) };
+  for (const id of ids) p.deletedItems[id] = p.updatedAt; // so group members' copies drop it too
   emit({ project: true, format: true, projects: true });
   return () => { // undo
-    for (const { it, idx } of removed) p.items.splice(Math.min(idx, p.items.length), 0, it);
+    for (const { it, idx } of removed) { delete p.deletedItems[it.id]; it._updated = Date.now(); p.items.splice(Math.min(idx, p.items.length), 0, it); }
     emit({ project: true, format: true, projects: true });
   };
 }
@@ -172,8 +181,12 @@ export function transferItems(ids, toProjectId, { copy = false } = {}) {
   const to = project(toProjectId);
   if (!to || to.id === from.id) return 0;
   const moving = from.items.filter(i => ids.includes(i.id));
-  to.items.push(...moving.map((i, n) => ({ ...JSON.parse(JSON.stringify(i)), id: copy ? uid() : i.id, _added: Date.now() + n })));
-  if (!copy) from.items = from.items.filter(i => !ids.includes(i.id));
+  to.items.push(...moving.map((i, n) => ({ ...JSON.parse(JSON.stringify(i)), id: copy ? uid() : i.id, _added: Date.now() + n, _updated: Date.now() + n })));
+  if (!copy) {
+    from.items = from.items.filter(i => !ids.includes(i.id));
+    from.deletedItems = { ...(from.deletedItems || {}) };
+    for (const id of ids) from.deletedItems[id] = Date.now();
+  }
   to.updatedAt = from.updatedAt = Date.now();
   emit({ project: true, format: true, projects: true });
   return moving.length;
@@ -253,6 +266,53 @@ export function applyRemoteMeta(meta) {
   if (!state.projects.length) state.projects.push(blankProject('My first bibliography'));
   if (!project(state.activeId)) state.activeId = state.projects[0].id;
   emit({ projects: true, project: before !== state.projects.length, format: before !== state.projects.length, remote: true });
+}
+
+// ---------- shared (group) projects ----------
+const stamp = it => it._updated || it._added || 0;
+
+// Combine two copies of a shared project: newest version of each source wins,
+// deletions win over older edits, settings come from whoever changed them last.
+export function mergeShared(local, remote) {
+  const deleted = { ...(remote.deletedItems || {}) };
+  for (const [id, t] of Object.entries(local.deletedItems || {})) deleted[id] = Math.max(deleted[id] || 0, t);
+  const byId = new Map();
+  for (const it of [...(local.items || []), ...(remote.items || [])]) {
+    const cur = byId.get(it.id);
+    if (!cur || stamp(it) > stamp(cur)) byId.set(it.id, it);
+  }
+  const order = [...(local.items || []).map(i => i.id), ...(remote.items || []).map(i => i.id)];
+  const items = [...new Set(order)].map(id => byId.get(id)).filter(it => !(deleted[it.id] >= stamp(it)));
+  const metaFrom = (remote.metaUpdatedAt || 0) > (local.metaUpdatedAt || 0) ? remote : local;
+  const out = { items, deletedItems: deleted, metaUpdatedAt: Math.max(local.metaUpdatedAt || 0, remote.metaUpdatedAt || 0), updatedAt: Math.max(local.updatedAt || 0, remote.updatedAt || 0) };
+  for (const k of META_KEYS) if (metaFrom[k] !== undefined) out[k] = metaFrom[k];
+  return out;
+}
+
+export const sharedPayload = p => Object.fromEntries(SHARED_KEYS.filter(k => p[k] !== undefined).map(k => [k, p[k]]));
+
+// A shared project arrived or changed in the cloud
+export function applyRemoteShared(sid, remote, info) {
+  let p = state.projects.find(x => x.shared?.id === sid);
+  const isNew = !p;
+  if (isNew) {
+    p = blankProject(remote.name || 'Group project', { id: `sh_${sid}`, items: [] });
+    state.projects.push(p);
+  }
+  const merged = mergeShared(isNew ? {} : p, remote);
+  Object.assign(p, merged, { shared: { ...(p.shared || {}), id: sid, ...info } });
+  const active = p.id === state.activeId;
+  emit({ projects: true, project: active, format: active, remote: true });
+  return p;
+}
+
+export function removeShared(sid) {
+  const idx = state.projects.findIndex(x => x.shared?.id === sid);
+  if (idx < 0) return;
+  const [p] = state.projects.splice(idx, 1);
+  if (!state.projects.length) state.projects.push(blankProject('My first bibliography'));
+  if (state.activeId === p.id) state.activeId = state.projects[0].id;
+  emit({ projects: true, project: true, format: true, remote: true });
 }
 
 // ---------- backup ----------

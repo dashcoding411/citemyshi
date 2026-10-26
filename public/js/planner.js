@@ -88,7 +88,7 @@ export function openPlanner() {
     } catch (e) { out.innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; }
   }, 250);
 
-  const save = () => { p.updatedAt = Date.now(); S.emit({}); };
+  const save = () => { S.touchMeta(p); S.emit({}); };
   const changed = () => { save(); run(); };
 
   m.el.addEventListener('click', e => {

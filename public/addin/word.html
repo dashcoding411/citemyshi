@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>citemyshi</title>
+  <link rel="stylesheet" href="panel.css">
+  <link rel="icon" href="icon-32.png">
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <header class="top"><span class="mark">“</span> citemyshi</header>
+  <main id="app"><p class="small" style="padding:12px">Loading…</p></main>
+  <div id="status" class="status" aria-live="polite"></div>
+  
+  <script type="module">
+    import { createHost } from './host-word.js';
+    import { start } from './panel.js';
+    createHost().then(start).catch(e => { document.getElementById('app').innerHTML = '<p class="status err">' + (e.message || e) + '</p>'; });
+  </script>
+</body>
+</html>

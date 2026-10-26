@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>html, body { margin: 0; height: 100%; } iframe { border: 0; width: 100%; height: 100%; display: block; }</style>
+  </head>
+  <body>
+    <iframe id="panel" src="https://citemyshi.web.app/addin/docs.html" allow="clipboard-write"></iframe>
+    <script>
+      // Relays the citemyshi panel's requests to the functions in Code.gs
+      var ORIGIN = 'https://citemyshi.web.app';
+      var ALLOWED = ['getStoredCode', 'setStoredCode', 'insertAtCursor', 'readCitations', 'updateCitations', 'writeBibliography'];
+      var frame = document.getElementById('panel');
+      window.addEventListener('message', function (e) {
+        if (e.origin !== ORIGIN || !e.data || !e.data.cms || ALLOWED.indexOf(e.data.fn) < 0) return;
+        var id = e.data.id;
+        var reply = function (msg) { msg.cms = true; msg.id = id; frame.contentWindow.postMessage(msg, ORIGIN); };
+        var runner = google.script.run
+          .withSuccessHandler(function (result) { reply({ ok: true, result: result }); })
+          .withFailureHandler(function (err) { reply({ ok: false, error: String((err && err.message) || err) }); });
+        runner[e.data.fn].apply(runner, e.data.args || []);
+      });
+    </script>
+  </body>
+</html>

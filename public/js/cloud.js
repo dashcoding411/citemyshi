@@ -7,7 +7,7 @@
 // JSON string because Firestore can't hold CSL's nested date arrays.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, writeBatch } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { getFirestore, doc, getDoc, getDocs, collection, onSnapshot, writeBatch, deleteDoc } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { getAnalytics, isSupported as analyticsSupported } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js';
 import { firebaseConfig } from './firebase-config.js';
 import * as S from './store.js';
@@ -25,6 +25,29 @@ export const onCloudChange = fn => listeners.add(fn);
 const setStatus = (status, error = null) => { cloud.status = status; cloud.error = error; listeners.forEach(fn => fn(cloud)); };
 
 let pushedProjects = new Map(); // id -> JSON last known to be in the cloud
+const pushedLinks = new Map(); // connection code -> JSON last sent to the add-ins
+
+// What the Word / Google Docs add-ins see for a connected project
+const linkPayload = p => JSON.stringify({ v: 1, name: p.name, style: p.style, styleTitle: p.styleTitle, lang: p.lang || '', items: p.items.map(({ _thumb, ...i }) => i), updatedAt: p.updatedAt });
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
+export const formatCode = c => c.replace(/(.{4})(?=.)/g, '$1-');
+
+export async function connectProject(project) {
+  if (!cloud.user) throw new Error('Sign in first so your project can be shared with Word / Google Docs securely.');
+  if (!project.linkCode) { project.linkCode = newCode(); project.updatedAt = Date.now(); S.emit({ projects: true }); }
+  await pushNow();
+  return project.linkCode;
+}
+
+export async function disconnectProject(project) {
+  const code = project.linkCode;
+  if (!code) return;
+  delete project.linkCode;
+  project.updatedAt = Date.now();
+  S.emit({ projects: true });
+  if (cloud.user) { await deleteDoc(doc(db, 'links', code)).catch(() => {}); pushedLinks.delete(code); }
+}
 let pushedMeta = '';
 let unsubs = [];
 
@@ -70,12 +93,21 @@ async function pushNow() {
   }
   const removed = [...pushedProjects.keys()].filter(id => !state.projects.some(p => p.id === id));
   for (const id of removed) { batch.delete(doc(db, 'users', user.uid, 'projects', id)); n++; }
+  const linkPending = [];
+  for (const p of state.projects) {
+    if (!p.linkCode) continue;
+    const json = linkPayload(p);
+    if (pushedLinks.get(p.linkCode) === json) continue;
+    batch.set(doc(db, 'links', p.linkCode), { owner: user.uid, data: json, updatedAt: Date.now() });
+    linkPending.push([p.linkCode, json]); n++;
+  }
   const meta = metaJson();
   if (meta !== pushedMeta) { batch.set(doc(db, 'users', user.uid), { data: meta, updatedAt: Date.now() }); n++; }
   if (!n) { if (cloud.status !== 'error') setStatus('synced'); return; }
   setStatus('syncing');
   await batch.commit();
   for (const [id, json] of pending) pushedProjects.set(id, json);
+  for (const [code, json] of linkPending) pushedLinks.set(code, json);
   for (const id of removed) pushedProjects.delete(id);
   pushedMeta = meta;
   setStatus('synced');

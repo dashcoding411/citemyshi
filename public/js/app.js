@@ -114,6 +114,7 @@ function projectMenu(anchor, id) {
     { label: 'Rename', icon: 'pencil', onClick: async () => { const n = await promptDialog({ title: 'Rename project', label: 'Project name', value: p.name }); if (n) S.updateProject(id, { name: n }); } },
     { label: 'Duplicate', icon: 'copy', onClick: () => { S.duplicateProject(id); toast('Project duplicated'); } },
     { label: 'Move to folder…', icon: 'folderMove', onClick: () => folderPicker(anchor, id) },
+    { label: 'Use in Word / Google Docs…', icon: 'file', onClick: () => openConnect(id) },
     { sep: true },
     { label: 'Delete project', icon: 'trash', danger: true, onClick: () => deleteProject(id) },
   ]);
@@ -286,6 +287,32 @@ function openStyleHelp() {
   $('[data-close-btn]', m.el).onclick = () => m.close();
 }
 
+// Connection code for the Word / Google Docs add-ins
+async function openConnect(projectId) {
+  const p = S.project(projectId);
+  const m = openModal({ title: 'Use in Word / Google Docs', body: '<div id="cx"></div>', foot: '<a class="btn" href="/addins.html" target="_blank">How to install the add-in</a><span class="spacer"></span><button class="btn" data-close-btn>Done</button>' });
+  $('[data-close-btn]', m.el).onclick = () => m.close();
+  const box = $('#cx', m.el);
+  const draw = async () => {
+    if (!cloudMod?.cloud?.user) {
+      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">The Word and Google Docs add-ins read <b>${esc(p.name)}</b> through a private connection code. Sign in first so it can be shared securely — it stays in sync as you add sources.</p>
+        <button class="btn btn-primary" data-cx-signin>${GOOGLE_G} Sign in with Google</button>`;
+      $('[data-cx-signin]', box).onclick = async () => { await doSignIn(); if (cloudMod?.cloud?.user) draw(); };
+      return;
+    }
+    box.innerHTML = '<div class="skel"><div style="width:50%"></div></div>';
+    try {
+      const code = await cloudMod.connectProject(p);
+      box.innerHTML = `<p style="margin:0 0 10px;color:var(--text-2)">Enter this code in the citemyshi add-in in <b>Word</b> (References → Citations) or <b>Google Docs</b> (citemyshi menu).</p>
+        <div class="code-box"><span class="code">${esc(cloudMod.formatCode(code))}</span><button class="btn btn-sm" data-cx-copy>${icon('copy')} Copy</button></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Anyone with this code can read this project’s sources (not edit them). New sources and style changes reach the add-in automatically. <button class="link" data-cx-stop style="background:none;border:0;color:var(--danger);font-weight:600;padding:0;font-size:12.5px">Turn off this code</button></p>`;
+      $('[data-cx-copy]', box).onclick = () => copyRich(esc(cloudMod.formatCode(code)), cloudMod.formatCode(code)).then(() => toast('Code copied'));
+      $('[data-cx-stop]', box).onclick = async () => { await cloudMod.disconnectProject(p); toast('Code turned off — the add-ins can no longer read this project'); m.close(); };
+    } catch (e) { box.innerHTML = `<div class="notice warn">${icon('alert')}<div>${esc(cloudMod.friendlyError(e) || e.message)}</div></div>`; }
+  };
+  draw();
+}
+
 function wireTopbar() {
   const tb = $('#topbar');
   tb.addEventListener('click', e => {
@@ -296,7 +323,7 @@ function wireTopbar() {
   });
   tb.addEventListener('change', e => { if ('projectName' in e.target.dataset) { const v = e.target.value.trim(); if (v) S.updateProject(state.activeId, { name: v }); else e.target.value = active().name; } });
   tb.addEventListener('keydown', e => { if ('projectName' in e.target.dataset && e.key === 'Enter') e.target.blur(); });
-  document.addEventListener('input', debounce(e => { if (e.target.closest?.('#projNotes')) { const p = active(); p.notes = e.target.value; p.updatedAt = Date.now(); S.emit({}); } }, 400));
+  document.addEventListener('input', debounce(e => { if (e.target.closest?.('#projNotes')) { const p = active(); p.notes = e.target.value; S.touchMeta(p); S.emit({}); } }, 400));
   $('#backdrop').onclick = () => document.body.classList.remove('nav-open');
 }
 
@@ -844,6 +871,7 @@ async function tagItems(ids) {
       remove ? set.delete(tg) : set.add(tg);
       it._tags = [...set];
       if (!it._tags.length) delete it._tags;
+      it._updated = Date.now();
     }
     p.updatedAt = Date.now();
     S.emit({ project: true });
@@ -870,6 +898,7 @@ async function sentenceCaseItems(items) {
       if (text && text !== it.title) {
         it._titleAsPublished ||= it.title;
         it.title = text;
+        it._updated = Date.now();
         changed++;
       }
     }));
