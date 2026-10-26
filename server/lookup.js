@@ -1,6 +1,7 @@
 // Lookups for DOI, ISBN, PMID, arXiv and free-text search (books + articles).
 import * as cheerio from 'cheerio';
 import { parseName, parseDate, cleanText, today } from './names.js';
+import { parseLegalCitation } from './legal.js';
 
 const UA = 'citemyshi/1.0 (citation generator; mailto:citemyshi@example.com)';
 // Google Books works without a key but shares a small anonymous quota; set GOOGLE_BOOKS_API_KEY for heavy use.
@@ -28,6 +29,7 @@ export function detectInput(q) {
   const digits = s.replace(/^isbn(?:-1[03])?:?\s*/i, '').replace(/[\s-]/g, '');
   if (/^(97[89]\d{10}|\d{9}[\dX])$/i.test(digits) && validIsbn(digits)) return { kind: 'isbn', value: digits.toUpperCase() };
   if (/^https?:\/\//i.test(s) || /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(s)) return { kind: 'url', value: /^https?:/i.test(s) ? s : `https://${s}` };
+  if (parseLegalCitation(s)) return { kind: 'legal', value: s };
   return { kind: 'search', value: s };
 }
 

@@ -4,6 +4,7 @@
 // and enriches it from DOI/ISBN/oEmbed/Wikipedia APIs when possible.
 import * as cheerio from 'cheerio';
 import { safeFetch } from './net.js';
+import { isLegalHost, legalFromUrl, legalFromPage } from './legal.js';
 import { parseName, splitAuthors, parseDate, cleanText, today, looksLikeOrg } from './names.js';
 import { lookupDoi, lookupIsbn, lookupArxiv, lookupPmid, lookupPmc, lookupPii, findByTitle, validIsbn, getJSON, prune, googleBookToCsl } from './lookup.js';
 
@@ -605,6 +606,18 @@ export async function citeUrl(inputUrl) {
   const url = inputUrl.trim();
   const host = hostOf(url);
   const warnings = [];
+
+  // Legislation sites, AustLII, JADE: the page title (when we can read it)
+  // plus what the link itself says
+  if (isLegalHost(host)) {
+    let title = '';
+    try { const page = await fetchPage(url); if (page.kind === 'html') title = cheerio.load(page.html)('title').first().text(); } catch {}
+    const item = legalFromPage(url, title);
+    if (item) {
+      const missing = !item.title;
+      return { item: { ...item, URL: cleanUrl(url) }, source: missing ? 'URL' : 'legal database', warnings: missing ? [`${hostOf(url)} doesn’t let us read the page, so we filled in what the link tells us${item.type === 'legal_case' ? ' (court, year and number)' : ' (jurisdiction and year)'}. Add the ${item.type === 'legal_case' ? 'case name' : 'name of the Act'}.`] : [] };
+    }
+  }
 
   // Fast paths for sites with good APIs
   try {

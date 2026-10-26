@@ -144,16 +144,28 @@ export function openStylePicker() {
 const prettyName = n => n.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 
 const LOCATOR_LABELS = [['page', 'Page'], ['chapter', 'Chapter'], ['paragraph', 'Paragraph'], ['section', 'Section'], ['line', 'Line'], ['figure', 'Figure'], ['volume', 'Volume'], ['verse', 'Verse'], ['timestamp', 'Time']];
+// Legal pinpoints are written out the way AGLC/OSCOLA want them: "s 9", "ss 18–20", "[42]"
+const LEGISLATION_PINPOINTS = [['s', 'Section'], ['pt', 'Part'], ['div', 'Division'], ['sch', 'Schedule'], ['reg', 'Regulation'], ['r', 'Rule'], ['cl', 'Clause'], ['art', 'Article']];
+const PLURAL = { s: 'ss', pt: 'pts', div: 'divs', sch: 'schs', reg: 'regs', r: 'rr', cl: 'cll', art: 'arts' };
+const CASE_PINPOINTS = [['page', 'Page'], ['para', 'Paragraph [ ]']];
 
 export function openInText(item) {
   const p = active();
   let last = {};
+  const isAct = ['legislation', 'bill'].includes(item.type);
+  const isCase = item.type === 'legal_case';
+  const labels = isAct ? LEGISLATION_PINPOINTS : isCase ? CASE_PINPOINTS : LOCATOR_LABELS;
+  // Pinpoint typed in the cite box, e.g. "s 9" or "[42]"
+  const pre = String(item._pinpoint || '');
+  const preLabel = (pre.match(/^([a-z]+)\s/) || [])[1];
+  const preKey = isAct ? (Object.entries(PLURAL).find(([k, v]) => v === preLabel)?.[0] || preLabel) : /^\[/.test(pre) ? 'para' : null;
+  const preValue = pre.replace(/^[a-z]+\s+/, '').replace(/^\[|\]$/g, '');
   const m = openModal({
-    title: 'In-text citation',
+    title: isAct || isCase ? 'Footnote / in-text citation' : 'In-text citation',
     body: `
       <div class="grid" style="grid-template-columns:140px 1fr;margin-bottom:16px">
-        <div class="field"><label>Cite a specific</label><select class="select" id="loc-label">${LOCATOR_LABELS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
-        <div class="field"><label>Number (optional)</label><input class="input" id="loc" placeholder="e.g. 42 or 42-45" autofocus></div>
+        <div class="field"><label>Cite a specific</label><select class="select" id="loc-label">${labels.map(([k, l]) => `<option value="${k}" ${k === preKey ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Number (optional)</label><input class="input" id="loc" placeholder="${isAct ? 'e.g. 9 or 18–20' : 'e.g. 42 or 42-45'}" value="${esc(preValue)}" autofocus></div>
       </div>
       <div id="intext-out"><div class="skel"><div style="width:40%"></div></div></div>
       <p style="color:var(--muted);font-size:12.5px;margin:12px 0 0">Tip: in-text citations go in your writing right after the quote or paraphrase.</p>`,
@@ -163,7 +175,19 @@ export function openInText(item) {
   const run = debounce(async () => {
     try {
       const timestamp = $('#loc-label', m.el).value === 'timestamp';
-      const r = await formatInText({ item, style: p.style, lang: p.lang, locator: $('#loc', m.el).value.trim(), label: timestamp ? 'page' : $('#loc-label', m.el).value });
+      let locator = $('#loc', m.el).value.trim();
+      let label = timestamp ? 'page' : $('#loc-label', m.el).value;
+      if (locator && isAct) {
+        const many = /[–,-]|\band\b/.test(locator);
+        locator = `${many ? PLURAL[label] : label} ${locator.replace(/-/g, '–')}`;
+        label = 'page';
+      } else if (locator && isCase && label === 'para') {
+        locator = `[${locator.replace(/^\[|\]$/g, '')}]`;
+        label = 'page';
+      }
+      const r = await formatInText({ item, style: p.style, lang: p.lang, locator, label });
+      if (isAct && locator) { r.paren = r.paren.replace(/\bpp?\.\s*/, ''); r.narrative = r.narrative.replace(/\bpp?\.\s*/, ''); }
+      if (isCase && /^\[/.test(locator)) { r.paren = r.paren.replace(/\bpp?\.\s*(?=\[)/, ''); r.narrative = r.narrative.replace(/\bpp?\.\s*(?=\[)/, ''); }
       if (timestamp && $('#loc', m.el).value.trim()) {
         // CSL has no timestamp label, so cite it as a page and drop the "p."
         r.paren = r.paren.replace(/\bpp?\.\s*/, '');

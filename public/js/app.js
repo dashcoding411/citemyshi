@@ -280,7 +280,7 @@ function wireTopbar() {
 // ============ CITE BOX ============
 function renderCiteCard() {
   const tab = CITE_TABS.find(t => t.id === ui.tab);
-  const tabIcons = { website: 'globe', book: 'book', journal: 'journal', video: 'video', all: 'search' };
+  const tabIcons = { website: 'globe', book: 'book', journal: 'journal', video: 'video', law: 'law', all: 'search' };
   $('#citeCard').innerHTML = `
     <div class="tabs" role="tablist">${CITE_TABS.map(t => `<button class="tab ${t.id === ui.tab ? 'active' : ''}" role="tab" aria-selected="${t.id === ui.tab}" data-tab="${t.id}">${icon(tabIcons[t.id])}${t.label}</button>`).join('')}</div>
     <form class="cite-form" data-cite-form>
@@ -328,7 +328,7 @@ function renderResults() {
 async function runCite() {
   const q = ui.query.trim();
   if (!q) { $('#citeInput').focus(); return; }
-  const looksDirect = /^(https?:\/\/|www\.|doi:|10\.\d{4,}\/|pmid:|arxiv:)/i.test(q) || /^[\d\s-]{10,17}[xX]?$/.test(q) || /^[a-z0-9-]+(\.[a-z0-9-]+)+\/\S*$/i.test(q) || /^\d{4}\.\d{4,5}(v\d+)?$/.test(q);
+  const looksDirect = /\b(Act|Regulations?|Bill)\s+\d{4}\b|\s\[\d{4}\]\s|\(\d{4}\)\s+\d+\s+[A-Z]/.test(q) || /^(https?:\/\/|www\.|doi:|10\.\d{4,}\/|pmid:|arxiv:)/i.test(q) || /^[\d\s-]{10,17}[xX]?$/.test(q) || /^[a-z0-9-]+(\.[a-z0-9-]+)+\/\S*$/i.test(q) || /^\d{4}\.\d{4,5}(v\d+)?$/.test(q);
   ui.loading = true; ui.loadingKind = looksDirect ? 'item' : 'search'; ui.results = null;
   renderCiteCard();
   try {
@@ -382,7 +382,7 @@ function wireCiteCard() {
     if (e.target.closest('[data-clear]')) { ui.query = ''; ui.results = null; renderCiteCard(); $('#citeInput').focus(); return; }
     if (e.target.closest('[data-close-results]')) { ui.results = null; renderCiteCard(); return; }
     if (e.target.closest('[data-manual]')) {
-      const map = { website: 'website', book: 'book', journal: 'journal', video: 'video', all: 'website' };
+      const map = { website: 'website', book: 'book', journal: 'journal', video: 'video', law: 'legislation', all: 'website' };
       const t = SOURCE_TYPES.find(s => s.id === map[ui.tab]);
       const item = { type: t.csl, ...(t.genre ? { genre: t.genre } : {}) };
       if (/^https?:\/\//.test(ui.query)) item.URL = ui.query.trim(); else if (ui.query.trim()) item.title = ui.query.trim();
@@ -537,6 +537,8 @@ function renderBib() {
     }
     listHtml = [...groups.entries()].sort((a, b) => (a[0] === 'Untagged') - (b[0] === 'Untagged') || a[0].localeCompare(b[0]))
       .map(([k, list]) => `<div class="group-head">${p.group === 'tag' && k !== 'Untagged' ? `<span class="chip" style="${tagColor(k)}">${esc(k)}</span>` : esc(k)} <span style="font-weight:500">${list.length}</span></div>${list.map(citeHtml).join('')}`).join('');
+  } else if (isAglc(p.style) && (p.sort || 'style') === 'style') {
+    listHtml = bibSections(items).map(([heading, list]) => `<div class="group-head">${esc(heading)} <span style="font-weight:500">${list.length}</span></div>${list.map(citeHtml).join('')}`).join('');
   } else listHtml = items.map(citeHtml).join('');
 
   const heading = ui.fmt?.style?.name ? headingFor(ui.fmt.style.name) : 'References';
@@ -591,17 +593,36 @@ function selectedItems() {
   return order.filter(i => ui.selected.has(i.id));
 }
 
+// AGLC 4 rule 1.13: the bibliography is split into lettered parts
+const isAglc = style => /^australian-guide-to-legal-citation/.test(style || '');
+const AGLC_PARTS = ['Articles/Books/Reports', 'Cases', 'Legislation', 'Treaties', 'Other'];
+const AGLC_A = new Set(['article', 'article-journal', 'article-magazine', 'book', 'chapter', 'report', 'thesis', 'paper-conference', 'entry-encyclopedia', 'entry-dictionary', 'review', 'review-book']);
+function aglcPart(item) {
+  if (item.type === 'legal_case') return 'Cases';
+  if (['legislation', 'bill', 'regulation'].includes(item.type)) return 'Legislation';
+  if (item.type === 'treaty') return 'Treaties';
+  return AGLC_A.has(item.type) ? 'Articles/Books/Reports' : 'Other';
+}
+// [[heading, items]] in order; one untitled group for other styles
+function bibSections(items) {
+  if (!isAglc(active().style)) return [[null, items]];
+  const groups = new Map();
+  for (const it of items) { const k = aglcPart(it); groups.set(k, [...(groups.get(k) || []), it]); }
+  return AGLC_PARTS.filter(k => groups.has(k)).map((k, i) => [`${String.fromCharCode(65 + i)} ${k}`, groups.get(k)]);
+}
+
 function bibHtmlFor(items) {
   const hanging = ui.fmt?.params?.hangingIndent;
   const spacing = ui.fmt?.params?.lineSpacing >= 2 ? 'line-height:2;' : '';
-  return items.map(i => {
+  const font = "font-family:'Times New Roman',serif;font-size:12pt";
+  return bibSections(items).map(([heading, list]) => (heading ? `<p style="${font};font-weight:bold;margin:12px 0 8px">${esc(heading)}</p>` : '') + list.map(i => {
     const f = ui.fmt?.byId.get(i.id);
     if (!f) return '';
     const inner = f.html.replace(/^<div class="csl-entry">|<\/div>\s*$/g, '').replace(/<div class="csl-left-margin">(.*?)<\/div><div class="csl-right-inline">/g, '$1 ').replace(/<\/?div[^>]*>/g, '');
-    return `<p style="${hanging ? 'padding-left:0.5in;text-indent:-0.5in;' : ''}${spacing}margin:0 0 ${spacing ? 0 : 8}px;font-family:'Times New Roman',serif;font-size:12pt">${inner}</p>`;
-  }).join('');
+    return `<p style="${hanging ? 'padding-left:0.5in;text-indent:-0.5in;' : ''}${spacing}margin:0 0 ${spacing ? 0 : 8}px;${font}">${inner}</p>`;
+  }).join('')).join('');
 }
-const bibTextFor = items => items.map(i => ui.fmt?.byId.get(i.id)?.text).filter(Boolean).join('\n\n');
+const bibTextFor = items => bibSections(items).map(([heading, list]) => [heading, ...list.map(i => ui.fmt?.byId.get(i.id)?.text)].filter(Boolean).join('\n\n')).join('\n\n');
 
 async function copyItems(items, label = 'Copied to clipboard') {
   if (!ui.fmt) return;
@@ -621,7 +642,7 @@ function exportMenu(anchor, items) {
     { label: 'Word document (.docx)', icon: 'file', onClick: async () => {
       try {
         if (!ui.fmt) throw new Error('Still formatting — try again in a second');
-        const entries = items.map(i => ui.fmt.byId.get(i.id)).filter(Boolean).map(e => ({ html: e.html }));
+        const entries = bibSections(items).flatMap(([heading, list]) => [...(heading ? [{ heading }] : []), ...list.map(i => ui.fmt.byId.get(i.id)).filter(Boolean).map(e => ({ html: e.html }))]);
         const res = await api('/api/export/docx', { body: { entries, params: ui.fmt.params, style: p.style, title: headingFor(p.style), filename: name }, raw: true });
         download(`${name}.docx`, await res.blob());
       } catch (e) { toast(e.message, { error: true }); }

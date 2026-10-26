@@ -37,7 +37,7 @@ function htmlToRuns(html, base) {
 // entries' HTML; this just lays them out as a Word document.
 export async function toDocx({ entries, params = {}, style = '', title }) {
   if (!Array.isArray(entries) || !entries.length) throw Object.assign(new Error('Nothing to export'), { status: 400 });
-  if (entries.length > 5000 || entries.some(e => typeof e?.html !== 'string' || e.html.length > 50_000)) throw Object.assign(new Error('That bibliography is too large to export'), { status: 400 });
+  if (entries.length > 5000 || entries.some(e => (typeof e?.html !== 'string' && typeof e?.heading !== 'string') || (e.html || e.heading).length > 50_000)) throw Object.assign(new Error('That bibliography is too large to export'), { status: 400 });
   const font = 'Times New Roman';
   const base = { font, size: 24 };
   const double = params.lineSpacing >= 2;
@@ -45,7 +45,7 @@ export async function toDocx({ entries, params = {}, style = '', title }) {
   const numeric = params.secondFieldAlign;
   const paragraphs = [
     new Paragraph({ alignment: AlignmentType.CENTER, spacing, children: [new TextRun({ text: title || bibliographyHeading(style), bold: !/^modern-language/.test(style), ...base })] }),
-    ...entries.map(e => new Paragraph({
+    ...entries.map(e => e.heading ? new Paragraph({ spacing: { ...spacing, before: 240 }, children: [new TextRun({ text: e.heading, bold: true, ...base })] }) : new Paragraph({
       spacing,
       indent: numeric || params.hangingIndent ? { left: 720, hanging: 720 } : undefined,
       tabStops: numeric ? [{ type: 'left', position: 720 }] : undefined,

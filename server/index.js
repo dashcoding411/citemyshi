@@ -7,6 +7,7 @@ import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search } f
 import { searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
 import { toDocx, toFormat, parseImport } from './export.js';
 import { normalizeTitleCase, toSentenceCase } from './casing.js';
+import { parseLegalCitation } from './legal.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -106,6 +107,7 @@ async function resolve(d, kind) {
     case 'isbn': return { mode: 'item', item: await lookupIsbn(d.value), source: 'ISBN' };
     case 'pmid': return { mode: 'item', item: await lookupPmid(d.value), source: 'PubMed' };
     case 'arxiv': return { mode: 'item', item: await lookupArxiv(d.value), source: 'arXiv' };
+    case 'legal': { const { item, pinpoint } = parseLegalCitation(d.value); return { mode: 'item', item: { ...item, ...(pinpoint ? { _pinpoint: pinpoint } : {}) }, source: 'legal citation' }; }
     default: return { mode: 'results', results: await search(d.value, kind === 'website' || kind === 'video' ? 'all' : kind) };
   }
 }

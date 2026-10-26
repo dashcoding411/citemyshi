@@ -143,6 +143,9 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     return word[0].toUpperCase() + word.slice(1);
   });
   function styleFixes(style, item) {
+    // Acts: the style prints the year itself, so "Corporations Act 2001" + 2001 would double it
+    const year = item.issued?.['date-parts']?.[0]?.[0];
+    if (['legislation', 'bill'].includes(item.type) && year && item.title && new RegExp(`\\s${year}$`).test(item.title.trim())) item = { ...item, title: item.title.trim().replace(new RegExp(`\\s${year}$`), '') };
     // IEEE: book, report and thesis titles are in Title Case (IEEE Reference Guide)
     if (/^ieee/.test(style.name) && ['book', 'report', 'thesis', 'manuscript'].includes(item.type) && item.title) return { ...item, title: titleCase(item.title) };
     return item;

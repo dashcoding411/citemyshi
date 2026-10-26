@@ -66,8 +66,12 @@ export const SOURCE_TYPES = [
   { id: 'interview', label: 'Interview', icon: 'mic', csl: 'interview', container: 'Published in', fields: ['title', 'container-title', 'medium', 'issued', 'URL'], important: ['title', 'issued'] },
   { id: 'speech', label: 'Speech / lecture', icon: 'mic', csl: 'speech', fields: ['title', 'genre', 'event-title', 'event-place', 'issued', 'URL'], important: ['title', 'issued'] },
   { id: 'letter', label: 'Letter / email', icon: 'mail', csl: 'personal_communication', fields: ['title', 'genre', 'issued'], important: ['issued'] },
-  { id: 'legislation', label: 'Legislation', icon: 'law', csl: 'legislation', container: 'Code', fields: ['title', 'number', 'container-title', 'section', 'issued', 'URL'], important: ['title', 'issued'] },
-  { id: 'case', label: 'Court case', icon: 'law', csl: 'legal_case', container: 'Reporter', fields: ['title', 'authority', 'container-title', 'volume', 'page', 'issued', 'URL'], important: ['title', 'authority', 'issued'] },
+  { id: 'legislation', label: 'Legislation (Act)', icon: 'law', csl: 'legislation', container: 'Jurisdiction', fields: ['title', 'issued', 'container-title', 'number', 'URL'], important: ['title', 'issued', 'container-title'],
+    labels: { title: 'Name of the Act (without the year)', issued: 'Year', 'container-title': 'Jurisdiction (e.g. Cth, NSW, Vic, UK)', number: 'Act number (optional)' } },
+  { id: 'bill', label: 'Bill', icon: 'law', csl: 'bill', container: 'Jurisdiction', fields: ['title', 'issued', 'container-title', 'URL'], important: ['title', 'issued'],
+    labels: { title: 'Name of the Bill (without the year)', issued: 'Year', 'container-title': 'Jurisdiction (e.g. Cth, NSW)' } },
+  { id: 'case', label: 'Court case', icon: 'law', csl: 'legal_case', container: 'Law report series', fields: ['title', 'issued', 'authority', 'number', 'volume', 'container-title-short', 'container-title', 'page', 'URL'], important: ['title', 'issued'],
+    labels: { title: 'Case name (e.g. Mabo v Queensland (No 2))', issued: 'Year', authority: 'Court abbreviation (e.g. HCA, NSWCA)', number: 'Judgment number (neutral citation)', volume: 'Report volume', 'container-title-short': 'Report abbreviation (e.g. CLR)', 'container-title': 'Report series (full name)', page: 'Starting page' } },
   { id: 'patent', label: 'Patent', icon: 'doc', csl: 'patent', fields: ['title', 'number', 'authority', 'issued', 'URL'], important: ['title', 'number', 'issued'] },
   { id: 'map', label: 'Map', icon: 'map', csl: 'map', fields: ['title', 'genre', 'publisher', 'publisher-place', 'issued', 'URL'], important: ['title', 'issued'] },
   { id: 'manuscript', label: 'Manuscript / archival', icon: 'doc', csl: 'manuscript', fields: ['title', 'genre', 'archive', 'archive_location', 'issued', 'URL'], important: ['title', 'archive'] },
@@ -80,6 +84,7 @@ export const CITE_TABS = [
   { id: 'book', label: 'Book', placeholder: 'Search by title, author, or ISBN', kind: 'book' },
   { id: 'journal', label: 'Journal', placeholder: 'Search by title, author, or paste a DOI', kind: 'journal' },
   { id: 'video', label: 'Video', placeholder: 'Paste a YouTube, Vimeo or TED link', kind: 'video' },
+  { id: 'law', label: 'Law', placeholder: 'e.g. Corporations Act 2001 (Cth) · Mabo v Queensland (No 2) [1992] HCA 23 · an AustLII link', kind: 'all' },
   { id: 'all', label: 'Search all', placeholder: 'Search books & articles, or paste a URL, DOI, ISBN, PMID, arXiv ID…', kind: 'all' },
 ];
 
@@ -94,6 +99,7 @@ export const ROLE_KEYS = ROLES.map(r => r[0]);
 export function sourceTypeFor(item) {
   if (item.type === 'webpage' && /video/i.test(item.genre || '')) return SOURCE_TYPES.find(t => t.id === 'video');
   if (item.type === 'broadcast' && /podcast/i.test(item.genre || '')) return SOURCE_TYPES.find(t => t.id === 'podcast');
+  if (item.type === 'bill') return SOURCE_TYPES.find(t => t.id === 'bill');
   return SOURCE_TYPES.find(t => t.csl === item.type && !t.genre) || SOURCE_TYPES.find(t => t.csl === item.type) || SOURCE_TYPES.find(t => t.id === 'document');
 }
 
