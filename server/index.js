@@ -6,6 +6,7 @@ import { citeUrl } from './extract.js';
 import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search } from './lookup.js';
 import { searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
 import { toDocx, toFormat, parseImport } from './export.js';
+import { normalizeTitleCase, toSentenceCase } from './casing.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
@@ -83,7 +84,14 @@ app.get('/api/cite', wrap(async req => {
   if (!q) throw Object.assign(new Error('Type something to cite'), { status: 400 });
   const d = detectInput(q);
   const key = `${d.kind}|${d.value}|${d.kind === 'search' ? kind : ''}`;
-  const r = await cached(key, d.kind === 'search' ? 3600_000 : 6 * 3600_000, () => resolve(d, kind));
+  const r = await cached(key, d.kind === 'search' ? 3600_000 : 6 * 3600_000, async () => {
+    const out = await resolve(d, kind);
+    // Store titles in sentence case (the CSL convention): APA etc. print them as-is,
+    // MLA/Chicago capitalise them automatically
+    if (out.item) out.item = normalizeTitleCase(out.item);
+    if (out.results) out.results = out.results.map(x => ({ ...x, item: normalizeTitleCase(x.item) }));
+    return out;
+  });
   // Fresh "accessed" date even when served from cache
   if (r.item) return { ...r, item: { ...r.item, ...(r.item.accessed ? { accessed: todayParts() } : {}) } };
   return r;
@@ -109,6 +117,8 @@ app.get('/api/csl/:name', wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=86400');
   return { name: s.name, title: s.title, isNote: s.isNote, defaultLocale: s.defaultLocale, xml: s.xml };
 }));
+
+app.post('/api/sentence-case', wrap(async req => ({ text: toSentenceCase(String(req.body?.text || '').slice(0, 2000)) })));
 
 app.get('/api/styles', wrap(async req => {
   const opts = { degree: req.query.degree ? String(req.query.degree) : undefined, uni: req.query.uni === '1', limit: Math.min(300, Number(req.query.limit) || 40) };

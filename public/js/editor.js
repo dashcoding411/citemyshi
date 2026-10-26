@@ -138,11 +138,45 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
     }
     const v = w[f] == null ? '' : String(w[f]);
     if (def.kind === 'textarea') return `<div class="${cls}" data-field="${f}"><label for="f-${f}">${esc(label)}</label><textarea class="input" id="f-${f}" data-f="${f}" rows="3">${esc(v)}</textarea></div>`;
-    return `<div class="${cls}" data-field="${f}"><label for="f-${f}">${esc(label)}${missing ? ' <span class="req">missing</span>' : ''}</label><input class="input" id="f-${f}" data-f="${f}" value="${esc(v)}" placeholder="${esc(def.placeholder || '')}"></div>`;
+    const caseTools = f === 'title' ? `<span class="case-tools">
+        <button type="button" class="case-btn" data-case="sentence" title="APA, Harvard, Vancouver: only the first word and names capitalised">Sentence case</button>
+        <button type="button" class="case-btn" data-case="title" title="Capitalise Major Words">Title Case</button>
+        ${w._titleAsPublished && w._titleAsPublished !== w.title ? '<button type="button" class="case-btn" data-case="original" title="Exactly as the source wrote it">As published</button>' : ''}
+      </span>` : '';
+    return `<div class="${cls}" data-field="${f}"><label for="f-${f}">${esc(label)}${missing ? ' <span class="req">missing</span>' : ''}${caseTools}</label><input class="input" id="f-${f}" data-f="${f}" value="${esc(v)}" placeholder="${esc(def.placeholder || '')}"></div>`;
+  }
+
+  // Title Case for the "Title Case" button (CSL styles like MLA do this themselves)
+  const MINOR = new Set(['a', 'an', 'the', 'and', 'but', 'or', 'nor', 'for', 'so', 'yet', 'as', 'at', 'by', 'in', 'of', 'off', 'on', 'per', 'to', 'up', 'via', 'vs', 'v', 'with', 'from', 'into', 'over']);
+  const toTitleCase = t => t.replace(/[\p{L}\p{N}][\p{L}\p{N}'’]*/gu, (word, idx) => {
+    const before = t.slice(0, idx).trimEnd();
+    const first = !before || /[:?!.—–-]$/.test(before);
+    if (/\p{Lu}.*\p{Lu}/u.test(word) || /\p{Ll}\p{Lu}/u.test(word)) return word; // NASA, iPhone
+    if (!first && MINOR.has(word.toLowerCase())) return word.toLowerCase();
+    return word[0].toUpperCase() + word.slice(1);
+  });
+
+  async function applyCase(mode) {
+    const input = $('#f-title', m.body);
+    const current = input.value;
+    if (!current.trim()) return;
+    if (mode === 'original') input.value = w._titleAsPublished;
+    else if (mode === 'title') input.value = toTitleCase(current);
+    else {
+      try {
+        // Sentence case needs the dictionary on the server (to keep names capitalised)
+        const lowered = current === current.toLowerCase() ? toTitleCase(current) : current;
+        input.value = (await api('/api/sentence-case', { body: { text: lowered } })).text;
+      } catch (e) { toast(e.message, { error: true }); return; }
+    }
+    if (!w._titleAsPublished) w._titleAsPublished = current;
+    w.title = input.value;
+    changed();
   }
 
   function bind() {
     const b = m.body;
+    $$('[data-case]', b).forEach(el => el.onclick = e => { e.preventDefault(); applyCase(el.dataset.case); });
     $('#ed-type', b).onchange = e => {
       const nt = SOURCE_TYPES.find(s => s.id === e.target.value);
       const old = sourceTypeFor(w);

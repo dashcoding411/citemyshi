@@ -557,6 +557,7 @@ function renderBib() {
         <button class="btn btn-sm" data-sel-copy>${icon('copy')} Copy</button>
         <button class="btn btn-sm" data-sel-move>${icon('folderMove')} Move / copy to…</button>
         <button class="btn btn-sm" data-sel-tag>${icon('tag')} Tag</button>
+        <button class="btn btn-sm" data-sel-case title="Only the first word and names capitalised — what APA, Harvard and Vancouver require">${icon('type')} <span class="hide-sm">Sentence-case titles</span></button>
         <button class="btn btn-sm" data-sel-export>${icon('download')} Export</button>
         <button class="btn btn-sm btn-danger" data-sel-delete>${icon('trash')} Delete</button>
         <span class="spacer"></span>
@@ -652,6 +653,7 @@ function citeMenu(anchor, id) {
     { label: 'Edit citation', icon: 'pencil', onClick: () => openEditor({ item: it }) },
     { label: it._note ? 'Edit note' : 'Add note', icon: 'note', onClick: () => startNote(id) },
     { label: 'Add tag…', icon: 'tag', onClick: () => tagItems([id]) },
+    { label: 'Sentence-case title', icon: 'type', onClick: () => sentenceCaseItems([it]) },
     { label: 'In-text citation', icon: 'quote', onClick: () => openInText(it) },
     { sep: true },
     { label: 'Duplicate', icon: 'copy', onClick: () => { const { id: _, _added, ...rest } = it; const [n] = S.addItems([rest]); ui.flash = n.id; toast('Citation duplicated'); } },
@@ -712,6 +714,28 @@ async function tagItems(ids) {
   $('[data-cancel]', m.el).onclick = () => m.close();
 }
 
+// Titles saved before sentence-casing existed (or typed in Title Case) can be
+// converted in one go; the original stays available in the editor.
+async function sentenceCaseItems(items) {
+  const p = active();
+  const targets = items.filter(i => i.title && !['legal_case', 'legislation', 'bill', 'treaty'].includes(i.type));
+  if (!targets.length) return;
+  let changed = 0;
+  try {
+    await Promise.all(targets.map(async it => {
+      const { text } = await api('/api/sentence-case', { body: { text: it.title } });
+      if (text && text !== it.title) {
+        it._titleAsPublished ||= it.title;
+        it.title = text;
+        changed++;
+      }
+    }));
+  } catch (e) { toast(e.message, { error: true }); }
+  p.updatedAt = Date.now();
+  S.emit({ project: true, format: true, projects: true });
+  toast(changed ? `Sentence-cased ${changed} title${changed === 1 ? '' : 's'} — check names stayed capitalised` : 'Those titles are already in sentence case');
+}
+
 function startNote(id) {
   ui.editingNote = id;
   renderBib();
@@ -770,6 +794,7 @@ function wireBib() {
     if ('selExport' in d) return exportMenu(el, selectedItems());
     if ('selMove' in d) return moveItems(selectedItems().map(i => i.id));
     if ('selTag' in d) return tagItems(selectedItems().map(i => i.id));
+    if ('selCase' in d) return sentenceCaseItems(selectedItems());
     if ('selDelete' in d) {
       const ids = selectedItems().map(i => i.id);
       const undo = S.removeItems(ids);

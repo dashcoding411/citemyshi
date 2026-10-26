@@ -294,6 +294,10 @@ button.chip:hover { filter: brightness(.96); }
 .contrib.org { grid-template-columns: 130px 2fr auto; }
 .contrib .tools { display: flex; gap: 0; }
 .contrib .tools .icon-btn { width: 28px; height: 32px; }
+.case-tools { margin-left: auto; display: inline-flex; gap: 4px; }
+.case-btn { border: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; }
+.case-btn:hover { color: var(--brand-ink); border-color: var(--brand); }
+.field > label { width: 100%; }
 .type-select-row { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; }
 .type-select-row .select { font-weight: 600; }
 .more-toggle { background: none; border: 0; color: var(--brand); font-weight: 600; padding: 4px 0; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
