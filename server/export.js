@@ -3,8 +3,7 @@ import { Document, Packer, Paragraph, TextRun, AlignmentType, LineRuleType } fro
 import { Cite } from '@citation-js/core';
 import '@citation-js/plugin-bibtex';
 import '@citation-js/plugin-ris';
-import '@citation-js/plugin-csl';
-import { formatBibliography, bibliographyHeading } from './styles.js';
+import { bibliographyHeading } from './styles.js';
 
 // citeproc HTML -> docx runs, keeping italics/bold/small caps/super/subscript
 function htmlToRuns(html, base) {
@@ -34,21 +33,24 @@ function htmlToRuns(html, base) {
   return runs;
 }
 
-const decode = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#38;/g, '&').replace(/&#39;/g, "'");
-
-export async function toDocx({ items, style, lang, title }) {
-  const bib = await formatBibliography({ items, style, lang });
+// The browser formats the bibliography (see format-worker.js) and sends the
+// entries' HTML; this just lays them out as a Word document.
+export async function toDocx({ entries, params = {}, style = '', title }) {
+  if (!Array.isArray(entries) || !entries.length) throw Object.assign(new Error('Nothing to export'), { status: 400 });
+  if (entries.length > 5000 || entries.some(e => typeof e?.html !== 'string' || e.html.length > 50_000)) throw Object.assign(new Error('That bibliography is too large to export'), { status: 400 });
   const font = 'Times New Roman';
   const base = { font, size: 24 };
-  const spacing = { line: bib.params.lineSpacing >= 2 ? 480 : 276, lineRule: LineRuleType.AUTO, after: bib.params.lineSpacing >= 2 ? 0 : 160 };
-  const numeric = bib.params.secondFieldAlign;
+  const double = params.lineSpacing >= 2;
+  const spacing = { line: double ? 480 : 276, lineRule: LineRuleType.AUTO, after: double ? 0 : 160 };
+  const numeric = params.secondFieldAlign;
   const paragraphs = [
     new Paragraph({ alignment: AlignmentType.CENTER, spacing, children: [new TextRun({ text: title || bibliographyHeading(style), bold: !/^modern-language/.test(style), ...base })] }),
-    ...bib.entries.map(e => new Paragraph({
+    ...entries.map(e => new Paragraph({
       spacing,
-      indent: numeric ? { left: 720, hanging: 720 } : bib.params.hangingIndent ? { left: 720, hanging: 720 } : undefined,
+      indent: numeric || params.hangingIndent ? { left: 720, hanging: 720 } : undefined,
       tabStops: numeric ? [{ type: 'left', position: 720 }] : undefined,
-      children: htmlToRuns(decode(e.html.replace(/^<div class="csl-entry">|<\/div>\s*$/g, '').replace(/<div class="csl-right-inline">|<\/div>/g, '').replace(/<div class="csl-left-margin">([\s\S]*?)<\/div>/g, '<span class="csl-left-margin">$1</span>')), base),
+      // Keep entities as-is: the parser decodes them (decoding first would turn AGLC's &lt;URL&gt; into a tag)
+      children: htmlToRuns(e.html.replace(/^<div class="csl-entry">|<\/div>\s*$/g, '').replace(/<div class="csl-right-inline">|<\/div>/g, '').replace(/<div class="csl-left-margin">([\s\S]*?)<\/div>/g, '<span class="csl-left-margin">$1</span>'), base),
     })),
   ];
   const doc = new Document({ styles: { default: { document: { run: { font, size: 24 } } } }, sections: [{ properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } }, children: paragraphs }] });

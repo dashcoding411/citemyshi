@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { citeUrl } from './extract.js';
 import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search } from './lookup.js';
-import { formatBibliography, formatInText, searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
+import { searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
 import { toDocx, toFormat, parseImport } from './export.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -102,12 +102,13 @@ async function resolve(d, kind) {
   }
 }
 
-app.post('/api/format', wrap(async req => {
-  const { items = [], style = 'apa', lang } = req.body;
-  return formatBibliography({ items, style, lang });
+// Full style file (dependent journal styles resolved to their parent) for the
+// browser's formatter. Styles rarely change, so let browsers/CDNs cache them.
+app.get('/api/csl/:name', wrap(async (req, res) => {
+  const s = await loadStyle(req.params.name);
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  return { name: s.name, title: s.title, isNote: s.isNote, defaultLocale: s.defaultLocale, xml: s.xml };
 }));
-
-app.post('/api/intext', wrap(async req => formatInText(req.body)));
 
 app.get('/api/styles', wrap(async req => {
   const opts = { degree: req.query.degree ? String(req.query.degree) : undefined, uni: req.query.uni === '1', limit: Math.min(300, Number(req.query.limit) || 40) };
@@ -133,9 +134,4 @@ app.post('/api/export/:format', wrap(async req => ({ text: toFormat(req.body.ite
 app.post('/api/import', wrap(async req => ({ items: await parseImport(typeof req.body === 'string' ? req.body : req.body.text || '') })));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n  citemyshi is running → http://localhost:${PORT}\n`);
-  // Warm up the popular styles so the first bibliography isn't slow
-  const sample = [{ id: 'w', type: 'webpage', title: 'Warm up', issued: { 'date-parts': [[2020]] } }];
-  (async () => { for (const st of ['apa', 'modern-language-association', 'harvard-cite-them-right', 'chicago-author-date', 'australian-guide-to-legal-citation']) await formatBibliography({ items: sample, style: st }).catch(() => {}); })();
-});
+app.listen(PORT, () => console.log(`\n  citemyshi is running → http://localhost:${PORT}\n`));

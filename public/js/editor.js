@@ -2,6 +2,7 @@ import { $, $$, esc, api, debounce, openModal, toast, confirmDialog, tagColor } 
 import { icon } from './icons.js';
 import { SOURCE_TYPES, FIELD_DEFS, ROLES, ROLE_KEYS, sourceTypeFor, missingInfo } from './types.js';
 import { state, active, project, addItems, replaceItem, removeItems, findDuplicate, allTags } from './store.js';
+import { formatBibliography } from './formatter.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -239,7 +240,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
     const status = $('.pv-status', m.body);
     try {
       if (status) status.innerHTML = '<span class="spinner" style="width:11px;height:11px;border-width:1.5px"></span>';
-      const r = await api('/api/format', { body: { items: [it], style: p.style, lang: p.lang } });
+      const r = await formatBibliography({ items: [it], style: p.style, lang: p.lang });
       const e = r.entries[0];
       const box = $('.pv-html', m.body);
       if (!box) return;

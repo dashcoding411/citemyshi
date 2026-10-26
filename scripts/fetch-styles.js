@@ -1,5 +1,6 @@
-// Downloads the CSL style catalog, the most-used styles for every degree, and
-// every citation language into data/. Run with: npm run setup
+// Downloads the CSL style catalog (data/, used by the server's search), plus the
+// most-used styles for every degree and every citation language into public/
+// so the website can format citations without the server. Run: npm run setup
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7,8 +8,8 @@ import { CURATED } from '../public/js/degrees.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataDir = path.join(root, 'data');
-const stylesDir = path.join(dataDir, 'styles');
-const localesDir = path.join(dataDir, 'locales');
+const stylesDir = path.join(root, 'public', 'styles');
+const localesDir = path.join(root, 'public', 'locales');
 
 const POPULAR = [
   'apa', 'modern-language-association', 'chicago-author-date', 'chicago-notes-bibliography',
@@ -52,9 +53,19 @@ async function main() {
   });
   console.log(`  ${ok}/${wanted.length} popular and degree styles downloaded`);
 
+  // Journal styles that just point at a parent style need the parent too
+  for (const name of wanted) {
+    const xml = await fs.readFile(path.join(stylesDir, `${name}.csl`), 'utf8').catch(() => '');
+    const parent = (xml.match(/<link[^>]*href="https?:\/\/www\.zotero\.org\/styles\/([^"]+)"[^>]*rel="independent-parent"/) || [])[1];
+    if (parent && !wanted.includes(parent)) {
+      try { await fs.writeFile(path.join(stylesDir, `${parent}.csl`), await get(`https://www.zotero.org/styles/${parent}`)); console.log(`  + parent ${parent} (for ${name})`); }
+      catch (e) { console.warn(`  ✗ parent ${parent}: ${e.message}`); }
+    }
+  }
+
   // Every CSL locale, so styles print "and", "edited by", months… in the right language
   const meta = JSON.parse(await get('https://raw.githubusercontent.com/citation-style-language/locales/master/locales.json'));
-  await fs.writeFile(path.join(dataDir, 'locales.json'), JSON.stringify(meta));
+  await fs.writeFile(path.join(localesDir, 'locales.json'), JSON.stringify(meta));
   const codes = Object.keys(meta['language-names']);
   let lok = 0;
   await pool(codes, 6, async code => {

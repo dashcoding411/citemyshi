@@ -4,8 +4,9 @@
   "description": "Free citation generator — a MyBib-style app",
   "scripts": {
     "start": "node server/index.js",
-    "setup": "node scripts/fetch-styles.js",
-    "dev": "node --watch server/index.js"
+    "setup": "node scripts/fetch-styles.js && node scripts/build-vendor.js",
+    "dev": "node --watch server/index.js",
+    "vendor": "node scripts/build-vendor.js"
   },
   "keywords": [],
   "author": "",

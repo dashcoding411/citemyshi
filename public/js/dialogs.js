@@ -1,13 +1,16 @@
 import { $, $$, esc, api, debounce, openModal, toast, copyRich } from './ui.js';
 import { icon } from './icons.js';
 import { state, active, updateProject, addItems, save } from './store.js';
+import { formatSample, formatInText, styleInfo } from './formatter.js';
 
 import { DEGREES } from './degrees.js';
 
 const SAMPLE = { id: 'sample', type: 'article-journal', title: 'The psychology of procrastination', author: [{ given: 'Jordan', family: 'Rivera' }, { given: 'Sam', family: 'Okafor' }], 'container-title': 'Journal of Student Life', volume: '12', issue: '3', page: '45-67', issued: { 'date-parts': [[2023, 4, 2]] }, DOI: '10.1234/jsl.2023.045' };
 
 let languagesCache = null;
-const loadLanguages = () => (languagesCache ||= api('/api/languages').catch(() => [{ code: 'en-US', english: 'English (US)', native: 'English (US)' }]));
+const loadLanguages = () => (languagesCache ||= fetch('/locales/locales.json').then(r => r.json())
+  .then(m => Object.entries(m['language-names']).map(([code, [native, english]]) => ({ code, native, english })).sort((a, b) => a.english.localeCompare(b.english)))
+  .catch(() => [{ code: 'en-US', english: 'English (US)', native: 'English (US)' }]));
 
 const TABS = [{ id: 'popular', label: 'Popular', icon: 'sparkles' }, ...DEGREES, { id: 'uni', label: 'Universities', icon: 'building' }];
 
@@ -95,7 +98,7 @@ export function openStylePicker() {
 
   const showSample = debounce(async s => {
     try {
-      const r = await api('/api/format', { body: { items: [SAMPLE], style: s.name, lang: langSel.value } });
+      const r = await formatSample({ items: [SAMPLE], style: s.name, lang: langSel.value });
       sample.hidden = false;
       sample.innerHTML = `<div class="menu-label" style="padding:0 0 6px">Example · ${esc(s.title)}</div><div class="csl ${r.params.hangingIndent ? 'hanging' : ''}">${r.entries[0]?.html || ''}</div><div style="margin-top:6px;color:var(--muted);font-size:12.5px">${r.style.isNote ? 'Footnote' : 'In-text'}: ${r.entries[0]?.intext?.paren || ''}</div>`;
     } catch {}
@@ -104,7 +107,7 @@ export function openStylePicker() {
   async function choose(s) {
     list.style.opacity = '.6';
     try {
-      const info = await api(`/api/style/${encodeURIComponent(s.name)}`);
+      const info = await styleInfo(s.name);
       const title = s.title && !/^[a-z0-9-]+$/.test(s.title) ? s.title : info.title;
       updateProject(p.id, { style: s.name, styleTitle: title });
       state.recentStyles = [s.name, ...(state.recentStyles || []).filter(n => n !== s.name)].slice(0, 8);
@@ -157,7 +160,7 @@ export function openInText(item) {
   const run = debounce(async () => {
     try {
       const timestamp = $('#loc-label', m.el).value === 'timestamp';
-      const r = await api('/api/intext', { body: { item, style: p.style, lang: p.lang, locator: $('#loc', m.el).value.trim(), label: timestamp ? 'page' : $('#loc-label', m.el).value } });
+      const r = await formatInText({ item, style: p.style, lang: p.lang, locator: $('#loc', m.el).value.trim(), label: timestamp ? 'page' : $('#loc-label', m.el).value });
       if (timestamp && $('#loc', m.el).value.trim()) {
         // CSL has no timestamp label, so cite it as a page and drop the "p."
         r.paren = r.paren.replace(/\bpp?\.\s*/, '');

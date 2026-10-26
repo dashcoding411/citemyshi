@@ -6,6 +6,7 @@ import { state, active } from './store.js';
 import { openEditor } from './editor.js';
 import { openStylePicker, openInText, openImport, pickProject } from './dialogs.js';
 import { sourceBadge, fixAll, openPaperCheck } from './audit.js';
+import { formatBibliography } from './formatter.js';
 
 let cloudMod = null; // optional Firebase sync, loaded lazily so the app works offline
 
@@ -429,7 +430,7 @@ async function refreshFormat() {
   ui.formatting = true;
   if (!ui.fmt || ui.fmt.projectId !== p.id) renderBib();
   try {
-    const r = await api('/api/format', { body: { items: p.items, style: p.style, lang: p.lang } });
+    const r = await formatBibliography({ items: p.items, style: p.style, lang: p.lang });
     if (seq !== fmtSeq) return;
     ui.fmt = { ...r, projectId: p.id, byId: new Map(r.entries.map((e, i) => [e.id, { ...e, order: i }])) };
     ui.fmtFor = key;
@@ -618,7 +619,9 @@ function exportMenu(anchor, items) {
     { label: 'Documents', heading: true },
     { label: 'Word document (.docx)', icon: 'file', onClick: async () => {
       try {
-        const res = await api('/api/export/docx', { body: { items, style: p.style, lang: p.lang, filename: name }, raw: true });
+        if (!ui.fmt) throw new Error('Still formatting — try again in a second');
+        const entries = items.map(i => ui.fmt.byId.get(i.id)).filter(Boolean).map(e => ({ html: e.html }));
+        const res = await api('/api/export/docx', { body: { entries, params: ui.fmt.params, style: p.style, title: headingFor(p.style), filename: name }, raw: true });
         download(`${name}.docx`, await res.blob());
       } catch (e) { toast(e.message, { error: true }); }
     } },
