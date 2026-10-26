@@ -28,6 +28,7 @@ export const POPULAR = [
   ['american-sociological-association', 'ASA'],
   ['american-chemical-society', 'ACS'],
   ['american-political-science-association', 'APSA'],
+  ['australian-guide-to-legal-citation', 'AGLC 4th edition (Australian legal)'],
   ['oscola', 'OSCOLA'],
   ['apa-6th-edition', 'APA 6th edition'],
   ['turabian-notes-bibliography', 'Turabian 9th (notes & bibliography)'],
@@ -92,15 +93,30 @@ function retrieveLocale(lang) {
   return false;
 }
 
+// Common abbreviations people search by
+const ALIASES = {
+  aglc: 'australian-guide-to-legal-citation', aglc4: 'australian-guide-to-legal-citation', 'aglc 4': 'australian-guide-to-legal-citation',
+  aglc3: 'australian-guide-to-legal-citation-3rd-edition', mla: 'modern-language-association', apa: 'apa', apa7: 'apa', apa6: 'apa-6th-edition',
+  harvard: 'harvard-cite-them-right', chicago: 'chicago-author-date', cmos: 'chicago-author-date', turabian: 'turabian-author-date',
+  vancouver: 'nlm-citation-sequence', nlm: 'nlm-citation-sequence', ama: 'american-medical-association', asa: 'american-sociological-association',
+  acs: 'american-chemical-society', apsa: 'american-political-science-association', bluebook: 'bluebook-law-review', mcgill: 'mcgill-en',
+};
+const acronym = t => t.replace(/\([^)]*\)/g, ' ').split(/[\s-]+/).filter(w => /^\p{Lu}/u.test(w)).map(w => w[0]).join('').toLowerCase();
+
 export function searchStyles(q, limit = 40) {
   q = (q || '').toLowerCase().trim();
   if (!q) return POPULAR.map(([n, t]) => ({ name: n, title: t, popular: true }));
   const words = q.split(/\s+/);
   const scored = [];
   for (const s of styleIndex) {
-    const hay = `${s.t} ${s.s || ''} ${s.n}`.toLowerCase();
-    if (!words.every(w => hay.includes(w))) continue;
+    const acr = acronym(s.t);
+    const hay = `${s.t} ${s.s || ''} ${s.n} ${acr}`.toLowerCase();
+    const aliasHit = ALIASES[q] === s.n || ALIASES[q.replace(/\s+/g, '')] === s.n;
+    const acrHit = q.replace(/\s|\d+(st|nd|rd|th)?$/g, '').length >= 3 && acr.startsWith(q.replace(/\s|\d+(st|nd|rd|th)?$/g, ''));
+    if (!aliasHit && !acrHit && !words.every(w => hay.includes(w))) continue;
     let score = 0;
+    if (aliasHit) score += 500;
+    if (acrHit) score += 60;
     if (s.n === q || (s.s || '').toLowerCase() === q) score += 100;
     if (s.t.toLowerCase().startsWith(q)) score += 50;
     if (!s.d) score += 10;
@@ -238,7 +254,7 @@ export async function formatBibliography({ items, style: styleName = 'apa', lang
 export function bibliographyHeading(styleName) {
   if (/^modern-language-association/.test(styleName)) return 'Works Cited';
   if (/^(apa|american-psychological)/.test(styleName)) return 'References';
-  if (/^(chicago|turabian)/.test(styleName)) return 'Bibliography';
+  if (/^(chicago|turabian|australian-guide-to-legal|oscola|mhra|modern-humanities)/.test(styleName)) return 'Bibliography';
   if (/harvard/.test(styleName)) return 'Reference List';
   return 'References';
 }

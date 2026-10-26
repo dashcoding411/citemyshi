@@ -578,7 +578,7 @@ function renderBib() {
 
 function headingFor(style) {
   if (/^modern-language-association/.test(style)) return 'Works Cited';
-  if (/^(chicago|turabian)/.test(style)) return 'Bibliography';
+  if (/^(chicago|turabian|australian-guide-to-legal|oscola|mhra|modern-humanities)/.test(style)) return 'Bibliography';
   if (/harvard/.test(style)) return 'Reference List';
   return 'References';
 }

@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { citeUrl } from './extract.js';
@@ -10,6 +11,7 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const app = express();
 app.set('trust proxy', 1); // Render sits behind a proxy
 app.disable('x-powered-by');
+app.use(compression());
 
 // Simple per-visitor rate limit for the endpoints that hit other websites
 const hits = new Map();
@@ -30,7 +32,7 @@ app.use('/api/import', rateLimit(20, 60_000));
 app.get('/healthz', (req, res) => res.send('ok'));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.text({ limit: '5mb', type: 'text/*' }));
-app.use(express.static(path.join(root, 'public')));
+app.use(express.static(path.join(root, 'public'), { maxAge: '1h' }));
 
 const wrap = fn => async (req, res) => {
   try { res.json(await fn(req, res)); }
@@ -38,11 +40,32 @@ const wrap = fn => async (req, res) => {
 };
 
 // One endpoint for the search box: figures out what you pasted.
+// Recently cited things come back instantly (6h for items, 1h for searches)
+const cache = new Map();
+function cached(key, ttl, fn) {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.t < ttl) return hit.v;
+  const v = fn().catch(e => { cache.delete(key); throw e; });
+  cache.set(key, { t: Date.now(), v });
+  if (cache.size > 1000) cache.delete(cache.keys().next().value);
+  return v;
+}
+
 app.get('/api/cite', wrap(async req => {
   const q = String(req.query.q || '').trim();
   const kind = String(req.query.kind || 'all');
   if (!q) throw Object.assign(new Error('Type something to cite'), { status: 400 });
   const d = detectInput(q);
+  const key = `${d.kind}|${d.value}|${d.kind === 'search' ? kind : ''}`;
+  const r = await cached(key, d.kind === 'search' ? 3600_000 : 6 * 3600_000, () => resolve(d, kind));
+  // Fresh "accessed" date even when served from cache
+  if (r.item) return { ...r, item: { ...r.item, ...(r.item.accessed ? { accessed: todayParts() } : {}) } };
+  return r;
+}));
+
+const todayParts = () => { const t = new Date(); return { 'date-parts': [[t.getFullYear(), t.getMonth() + 1, t.getDate()]] }; };
+
+async function resolve(d, kind) {
   switch (d.kind) {
     case 'url': { const r = await citeUrl(d.value); return { mode: 'item', ...r }; }
     case 'doi': return { mode: 'item', item: await lookupDoi(d.value), source: 'DOI' };
@@ -51,7 +74,7 @@ app.get('/api/cite', wrap(async req => {
     case 'arxiv': return { mode: 'item', item: await lookupArxiv(d.value), source: 'arXiv' };
     default: return { mode: 'results', results: await search(d.value, kind === 'website' || kind === 'video' ? 'all' : kind) };
   }
-}));
+}
 
 app.post('/api/format', wrap(async req => {
   const { items = [], style = 'apa', lang } = req.body;
@@ -79,4 +102,9 @@ app.post('/api/export/:format', wrap(async req => ({ text: toFormat(req.body.ite
 app.post('/api/import', wrap(async req => ({ items: await parseImport(typeof req.body === 'string' ? req.body : req.body.text || '') })));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`\n  citemyshi is running → http://localhost:${PORT}\n`));
+app.listen(PORT, () => {
+  console.log(`\n  citemyshi is running → http://localhost:${PORT}\n`);
+  // Warm up the popular styles so the first bibliography isn't slow
+  const sample = [{ id: 'w', type: 'webpage', title: 'Warm up', issued: { 'date-parts': [[2020]] } }];
+  (async () => { for (const st of ['apa', 'modern-language-association', 'harvard-cite-them-right', 'chicago-author-date', 'australian-guide-to-legal-citation']) await formatBibliography({ items: sample, style: st }).catch(() => {}); })();
+});

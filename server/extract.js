@@ -95,37 +95,56 @@ function cleanUrl(u) {
 }
 
 // ---------- fetching ----------
-async function fetchPage(url) {
-  let lastErr;
-  const attempts = [BROWSER_HEADERS, ...FALLBACK_UAS.map(ua => ({ 'User-Agent': ua, Accept: '*/*' }))];
-  for (const headers of attempts) {
-    try {
-      const res = await safeFetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(15000) });
-      const type = res.headers.get('content-type') || '';
-      if (!res.ok && res.status !== 404) { lastErr = new Error(`HTTP ${res.status}`); lastErr.status = res.status; continue; }
-      if (/pdf/i.test(type) || /\.pdf($|\?)/i.test(res.url)) {
-        const buf = Buffer.from(await res.arrayBuffer());
-        return { kind: 'pdf', buf, finalUrl: res.url, status: res.status };
-      }
-      const html = await readLimited(res, 4_000_000);
-      // Cloudflare / bot-wall pages don't contain metadata; try the next UA
-      const wall = /<title>\s*(Just a moment|Attention Required|Access denied|Access Denied|Are you a robot|Please verify|Robot or human|Client Challenge|Security check|Verifying|One moment|Pardon Our Interruption|Checking your browser|Request blocked)/i.test(html)
-        || (hostOf(res.url) && hostOf(res.url) !== hostOf(url) && /^(idp|auth|login|signin|sso|accounts|consent)\./.test(new URL(res.url).hostname));
-      if (wall) { lastErr = new Error('Blocked by bot protection'); continue; }
-      return { kind: 'html', html, finalUrl: res.url, status: res.status };
-    } catch (e) { lastErr = e; }
+// One attempt with a given set of headers. Rejects on block/error so attempts can race.
+async function tryFetch(url, headers, timeout) {
+  const res = await safeFetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(timeout) });
+  const type = res.headers.get('content-type') || '';
+  if (!res.ok && res.status !== 404) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+  if (/pdf/i.test(type) || /\.pdf($|\?)/i.test(res.url)) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    return { kind: 'pdf', buf, finalUrl: res.url, status: res.status };
   }
-  throw lastErr || new Error('Could not load page');
+  const html = await readLimited(res, 4_000_000);
+  // Cloudflare / bot-wall pages don't contain metadata
+  const wall = /<title>\s*(Just a moment|Attention Required|Access denied|Access Denied|Are you a robot|Please verify|Robot or human|Client Challenge|Security check|Verifying|One moment|Pardon Our Interruption|Checking your browser|Request blocked)/i.test(html)
+    || (hostOf(res.url) && hostOf(res.url) !== hostOf(url) && /^(idp|auth|login|signin|sso|accounts|consent)\./.test(new URL(res.url).hostname));
+  if (wall) throw new Error('Blocked by bot protection');
+  return { kind: 'html', html, finalUrl: res.url, status: res.status };
 }
 
-async function readLimited(res, max) {
+// Normal browser first; if the site blocks us, try the link-preview bots all at
+// once (not one after another) and take whichever gets through first.
+async function fetchPage(url) {
+  try { return await tryFetch(url, BROWSER_HEADERS, 9000); }
+  catch (first) {
+    if (first.name === 'TimeoutError' || /timeout|aborted/i.test(first.message)) throw new Error('The site took too long to respond');
+    if (/isn’t allowed|Only http/.test(first.message)) throw first;
+    try { return await Promise.any(FALLBACK_UAS.map(ua => tryFetch(url, { 'User-Agent': ua, Accept: '*/*' }, 6000))); }
+    catch { throw first; }
+  }
+}
+
+// Citation metadata lives in <head> (plus bylines/JSON-LD near the top of the
+// body), so once the head has arrived we only wait a little longer for the
+// rest — slow sites can take seconds to trickle out the whole page.
+async function readLimited(res, max, { afterHeadMs = 700, afterHeadBytes = 500_000 } = {}) {
   const reader = res.body.getReader();
   const chunks = [];
-  let size = 0;
+  let size = 0, headAt = -1, deadline = Infinity, tail = '';
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value); size += value.length;
+    const wait = deadline - Date.now();
+    if (wait <= 0) { reader.cancel().catch(() => {}); break; }
+    const next = Number.isFinite(wait)
+      ? await Promise.race([reader.read(), new Promise(r => setTimeout(() => r({ timeout: true }), wait))])
+      : await reader.read();
+    if (next.timeout) { reader.cancel().catch(() => {}); break; }
+    if (next.done) break;
+    chunks.push(next.value); size += next.value.length;
+    if (headAt < 0) {
+      const text = tail + Buffer.from(next.value).toString('latin1');
+      if (/<\/head>/i.test(text)) { headAt = size; deadline = Date.now() + afterHeadMs; }
+      tail = text.slice(-16);
+    } else if (size - headAt > afterHeadBytes) { reader.cancel().catch(() => {}); break; }
     if (size > max) { reader.cancel().catch(() => {}); break; }
   }
   return Buffer.concat(chunks).toString('utf8');
@@ -270,8 +289,18 @@ function isbnsIn(text) {
 }
 
 // ---------- main HTML extractor ----------
+// Drop scripts/styles/SVG before parsing (keeping JSON-LD): far less work for
+// the parser, which matters a lot on small hosting CPUs.
+function slimHtml(html) {
+  return html
+    .replace(/<script\b(?![^>]*application\/ld\+json)[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<(style|svg|noscript|template|iframe)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .slice(0, 1_500_000);
+}
+
 export function extractFromHtml(html, pageUrl) {
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(slimHtml(html));
   const m = collectMeta($);
   const ld = collectJsonLd($);
   const byId = new Map(ld.filter(n => n['@id']).map(n => [n['@id'], n]));
@@ -438,11 +467,15 @@ function isoDuration(d) {
 
 // ---------- special sites ----------
 async function youtube(url) {
-  const o = await getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
-  const item = { type: 'webpage', genre: 'Video', title: o.title, author: [{ literal: o.author_name }], 'container-title': 'YouTube', URL: cleanUrl(url), accessed: today() };
+  const [o, pageRes] = await Promise.allSettled([
+    getJSON(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`),
+    fetchPage(url),
+  ]);
+  if (o.status === 'rejected') throw o.reason;
+  const item = { type: 'webpage', genre: 'Video', title: o.value.title, author: [{ literal: o.value.author_name }], 'container-title': 'YouTube', URL: cleanUrl(url), accessed: today() };
   try {
-    const page = await fetchPage(url);
-    if (page.kind === 'html') {
+    const page = pageRes.status === 'fulfilled' ? pageRes.value : null;
+    if (page?.kind === 'html') {
       const $ = cheerio.load(page.html);
       const d = $('meta[itemprop="datePublished"]').attr('content') || $('meta[itemprop="uploadDate"]').attr('content') || (page.html.match(/"publishDate":"([^"]+)"/) || [])[1] || (page.html.match(/"uploadDate":"([^"]+)"/) || [])[1];
       item.issued = d && /T/.test(d) ? parseDate(new Date(d).toISOString()) : parseDate(d);
@@ -525,6 +558,9 @@ function fromUrlOnly(url) {
   });
 }
 
+// Extra lookups shouldn't hold the citation hostage: give up after `ms`.
+const within = (p, ms = 3500) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), ms))]);
+
 // Merge scholarly metadata over page metadata, keeping the page URL.
 function mergeScholarly(page, scholarly) {
   const merged = { ...page, ...pickDefined(scholarly) };
@@ -593,7 +629,7 @@ export async function citeUrl(inputUrl) {
     if (ts) return { item: ts, source: 'Zotero translator' };
     // Blocked, but the link often contains the title (ResearchGate, Academia…): look it up
     const guess = fromUrlOnly(url);
-    try { const found = await findByTitle(guess.title); if (found) return { item: found, source: 'DOI' }; } catch {}
+    try { const found = await within(findByTitle(guess.title), 5000); if (found) return { item: found, source: 'DOI' }; } catch {}
     return { item: guess, source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`] };
   }
 
@@ -609,16 +645,16 @@ export async function citeUrl(inputUrl) {
   const doi = hints.doi || urlDoi;
   let source = page.kind === 'pdf' ? 'PDF' : 'Webpage';
   if (doi) {
-    try { item = mergeScholarly(item, await lookupDoi(doi)); source = 'DOI'; } catch {}
+    try { item = mergeScholarly(item, await within(lookupDoi(doi), 5000)); source = 'DOI'; } catch {}
   } else if (hints.arxiv) {
-    try { item = mergeScholarly(item, await lookupArxiv(hints.arxiv)); source = 'arXiv'; } catch {}
+    try { item = mergeScholarly(item, await within(lookupArxiv(hints.arxiv), 5000)); source = 'arXiv'; } catch {}
   } else if (hints.pmid && item.type === 'article-journal' && !item['container-title']) {
-    try { item = mergeScholarly(item, await lookupPmid(hints.pmid)); source = 'PubMed'; } catch {}
+    try { item = mergeScholarly(item, await within(lookupPmid(hints.pmid))); source = 'PubMed'; } catch {}
   } else if (item.type === 'book') {
     const isbn = hints.isbn || isbnsIn(result.text || '')[0];
     if (isbn) {
       try {
-        const book = await lookupIsbn(isbn);
+        const book = await within(lookupIsbn(isbn));
         item = { ...item, ...pickDefined(book), URL: undefined };
         source = 'ISBN';
       } catch {}
