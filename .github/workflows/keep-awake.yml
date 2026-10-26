@@ -1,7 +1,7 @@
 # Render's free plan sleeps after 15 idle minutes, making the next visit take
 # ~30s. This pings the site every 10 minutes so it stays awake.
-# Setup: GitHub repo → Settings → Secrets and variables → Actions → Variables →
-# New variable RENDER_URL = https://your-app.onrender.com
+# Pings https://citemyshi.onrender.com by default; set a repo variable
+# RENDER_URL to point it somewhere else.
 name: Keep Render awake
 on:
   schedule:
@@ -10,6 +10,5 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    if: ${{ vars.RENDER_URL != '' }}
     steps:
-      - run: curl -fsS --max-time 60 "${{ vars.RENDER_URL }}/healthz" || true
+      - run: curl -fsS --max-time 90 "${{ vars.RENDER_URL || 'https://citemyshi.onrender.com' }}/healthz" || true
