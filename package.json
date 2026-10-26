@@ -7,7 +7,8 @@
     "setup": "node scripts/fetch-styles.js && node scripts/build-words.js && node scripts/build-vendor.js",
     "dev": "node --watch server/index.js",
     "vendor": "node scripts/build-vendor.js",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-citemyshi 'node --test tests/rules.emu.mjs'"
   },
   "keywords": [],
   "author": "",
@@ -26,5 +27,9 @@
   },
   "engines": {
     "node": ">=20.18"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.10.0"
   }
 }

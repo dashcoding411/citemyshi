@@ -219,6 +219,13 @@ input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--brand); 
 .pl-result { display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; align-items: start; padding: 6px 0; border-top: 1px solid var(--border); }
 .pl-result .pl-n { padding-top: 2px; }
 @media (max-width: 900px) { .pl-row { grid-template-columns: 24px 1fr; } .pl-row input, .pl-row .pl-tools { grid-column: 2; } }
+.link-text { font: 600 13px/1.3 ui-monospace, Menlo, monospace; color: var(--brand-ink); overflow-wrap: anywhere; }
+.member { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--border); }
+.member .t { flex: 1; }
+.member .fmt { font-size: 12px; color: var(--muted); }
+.avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--brand-soft); color: var(--brand-ink); display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.shared-crumb { background: none; border: 0; color: var(--brand-ink); font: inherit; font-size: 13px; display: inline-flex; gap: 5px; align-items: center; padding: 0; cursor: pointer; }
+.shared-crumb svg { width: 14px; height: 14px; }
 .code-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1.5px dashed var(--brand); border-radius: 12px; background: var(--brand-soft); }
 .code-box .code { font: 700 22px/1 ui-monospace, Menlo, monospace; letter-spacing: .08em; color: var(--brand-ink); }
 .intext-only { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; color: var(--text-2); background: var(--sunken); border-radius: 9px; padding: 9px 12px; }

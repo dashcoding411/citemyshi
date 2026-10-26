@@ -17,6 +17,49 @@ service cloud.firestore {
       }
     }
 
+    // Group projects. The 20-character id in the join link is the invitation:
+    // a signed-in person who has it can add only themselves, as an editor.
+    // Members edit the content; the owner can remove people or delete it.
+    match /shared/{sid} {
+      function isMember() { return signedIn() && request.auth.uid in resource.data.members; }
+      function onlyChanged(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+      function memberDiff() { return request.resource.data.members.diff(resource.data.members); }
+      function validEntry(uid, role) {
+        return request.resource.data.members[uid].keys().hasOnly(['role', 'name'])
+          && request.resource.data.members[uid].role == role
+          && request.resource.data.members[uid].name is string
+          && request.resource.data.members[uid].name.size() <= 60;
+      }
+
+      allow get: if isMember();
+      allow create: if signedIn() && sid.size() == 20
+        && request.resource.data.keys().hasOnly(['owner', 'members', 'data', 'updatedAt'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.members.keys().hasOnly([request.auth.uid])
+        && validEntry(request.auth.uid, 'owner')
+        && request.resource.data.data is string && request.resource.data.data.size() < 1000000;
+      allow update: if
+          // members save the shared content
+          (isMember() && onlyChanged(['data', 'updatedAt'])
+            && request.resource.data.data is string && request.resource.data.data.size() < 1000000)
+          // joining with the link: add yourself as an editor, nothing else
+       || (signedIn() && !(request.auth.uid in resource.data.members) && onlyChanged(['members'])
+            && memberDiff().affectedKeys().hasOnly([request.auth.uid])
+            && memberDiff().addedKeys().hasOnly([request.auth.uid])
+            && memberDiff().addedKeys().hasAll([request.auth.uid])
+            && validEntry(request.auth.uid, 'editor')
+            && request.resource.data.members.size() <= 50)
+          // leaving: remove yourself (the owner deletes instead)
+       || (isMember() && request.auth.uid != resource.data.owner && onlyChanged(['members'])
+            && memberDiff().affectedKeys().hasOnly([request.auth.uid])
+            && memberDiff().removedKeys().hasAll([request.auth.uid]))
+          // the owner removes people
+       || (signedIn() && request.auth.uid == resource.data.owner && onlyChanged(['members'])
+            && memberDiff().addedKeys().size() == 0 && memberDiff().changedKeys().size() == 0
+            && !(resource.data.owner in memberDiff().removedKeys()));
+      allow delete: if signedIn() && resource.data.owner == request.auth.uid;
+    }
+
     // Read-only copies of a project for the Word / Google Docs add-ins.
     // The 12-character code is the key: anyone who has it can read that one
     // project (no listing), and only its owner can change or remove it.

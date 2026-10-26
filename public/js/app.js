@@ -27,7 +27,7 @@ function renderSidebar() {
   const match = p => !q || p.name.toLowerCase().includes(q);
   const projRow = p => `
     <div class="tree-row ${p.id === state.activeId ? 'active' : ''}" data-project="${p.id}" draggable="true" title="${esc(p.name)}">
-      ${icon('file')}<span class="name">${esc(p.name)}</span><span class="count">${p.items.length}</span>
+      ${icon(p.shared ? 'users' : 'file')}<span class="name">${esc(p.name)}</span><span class="count">${p.items.length}</span>
       <button class="row-menu" data-project-menu="${p.id}" aria-label="Project options">${icon('more')}</button>
     </div>`;
   const folders = state.folders.map(f => {
@@ -116,7 +116,11 @@ function projectMenu(anchor, id) {
     { label: 'Move to folder…', icon: 'folderMove', onClick: () => folderPicker(anchor, id) },
     { label: 'Use in Word / Google Docs…', icon: 'file', onClick: () => openConnect(id) },
     { sep: true },
-    { label: 'Delete project', icon: 'trash', danger: true, onClick: () => deleteProject(id) },
+    { label: p.shared ? 'Group members & link…' : 'Share with your group…', icon: 'users', onClick: () => openShare(id) },
+    { sep: true },
+    p.shared && p.shared.role !== 'owner'
+      ? { label: 'Leave group', icon: 'external', danger: true, onClick: () => leaveGroup(id) }
+      : { label: p.shared ? 'Delete for everyone' : 'Delete project', icon: 'trash', danger: true, onClick: () => p.shared ? stopGroup(id, true) : deleteProject(id) },
   ]);
 }
 
@@ -253,6 +257,7 @@ function renderTopbar() {
       <input value="${esc(p.name)}" aria-label="Project name" data-project-name maxlength="120">
       <div class="project-sub">
         ${folder ? `<span class="crumb"><span class="folder-dot" style="background:${folder.color || 'var(--muted)'}"></span>${esc(folder.name)}</span><span>·</span>` : ''}
+        ${p.shared ? `<button class="crumb shared-crumb" data-share-open title="Group project">${icon('users')} ${esc(Object.values(p.shared.members || {}).map(x => x.name.split(' ')[0]).slice(0, 4).join(', '))}${Object.keys(p.shared.members || {}).length > 4 ? ` +${Object.keys(p.shared.members).length - 4}` : ''}</button><span>·</span>` : ''}
         <span>${p.items.length} citation${p.items.length === 1 ? '' : 's'}</span>
         <span>·</span>
         <button class="cite-foot-link" data-proj-notes style="background:none;border:0;padding:0;color:${p.notes ? 'var(--brand)' : 'var(--muted)'};display:inline-flex;gap:4px;align-items:center;font-size:13px">${icon('note')} ${p.notes ? 'Project notes' : 'Add project notes'}</button>
@@ -287,6 +292,94 @@ function openStyleHelp() {
   $('[data-close-btn]', m.el).onclick = () => m.close();
 }
 
+// ---------- group projects ----------
+async function openShare(projectId) {
+  const p = S.project(projectId);
+  const m = openModal({ title: p.shared ? `Group project: ${p.name}` : 'Share with your group', body: '<div id="sh"></div>', foot: '<span class="spacer"></span><button class="btn" data-close-btn>Done</button>' });
+  $('[data-close-btn]', m.el).onclick = () => m.close();
+  const box = $('#sh', m.el);
+  const draw = () => {
+    if (!cloudMod?.cloud?.user) {
+      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Work on <b>${esc(p.name)}</b> together: everyone in the group can add sources, notes and quotes, and changes appear for everyone. Sign in first so only your group can see it.</p>
+        <button class="btn btn-primary" data-sh-signin>${GOOGLE_G} Sign in with Google</button>`;
+      $('[data-sh-signin]', box).onclick = async () => { await doSignIn(); if (cloudMod?.cloud?.user) draw(); };
+      return;
+    }
+    if (!p.shared) {
+      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Everyone you send the join link to can add, edit and delete sources, notes and quotes in <b>${esc(p.name)}</b>. Their changes show up for you live. Folders and sorting stay personal.</p>
+        <button class="btn btn-primary" data-sh-create>${icon('users')} Create join link</button>`;
+      $('[data-sh-create]', box).onclick = async e => {
+        e.target.disabled = true;
+        try { await cloudMod.shareProject(p); draw(); toast('Group project created — send your group the link'); }
+        catch (err) { toast(cloudMod.friendlyError(err) || err.message, { error: true }); e.target.disabled = false; }
+      };
+      return;
+    }
+    const me = cloudMod.cloud.user.uid;
+    const isOwner = p.shared.owner === me;
+    const link = cloudMod.joinLink(p.shared.id);
+    const members = Object.entries(p.shared.members || {}).sort((a, b) => (b[1].role === 'owner') - (a[1].role === 'owner'));
+    box.innerHTML = `<p style="margin:0 0 8px;color:var(--text-2)">Send this link to your group. They sign in, open it, and they’re in.</p>
+      <div class="code-box"><span class="link-text">${esc(link)}</span><button class="btn btn-sm" data-sh-copy>${icon('copy')} Copy</button></div>
+      <div class="menu-label" style="padding:16px 0 6px">Members (${members.length})</div>
+      ${members.map(([uid, mm]) => `<div class="member"><span class="avatar">${esc((mm.name || '?')[0].toUpperCase())}</span><span class="t">${esc(mm.name)}${uid === me ? ' (you)' : ''}</span><span class="fmt">${mm.role === 'owner' ? 'Owner' : 'Editor'}</span>${isOwner && uid !== me ? `<button class="btn btn-sm btn-ghost" data-sh-remove="${esc(uid)}">Remove</button>` : ''}</div>`).join('')}
+      <p style="font-size:12.5px;color:var(--muted);margin:14px 0 0">${isOwner
+        ? 'Anyone with the link can join. To stop sharing, use <b>Stop sharing</b> — everyone keeps their own copy of the sources.'
+        : 'You can leave any time from the project’s ⋯ menu.'}</p>
+      ${isOwner ? `<button class="btn btn-sm btn-danger" data-sh-stop style="margin-top:10px">Stop sharing</button>` : `<button class="btn btn-sm btn-danger" data-sh-leave style="margin-top:10px">Leave group</button>`}`;
+    $('[data-sh-copy]', box).onclick = () => copyRich(esc(link), link).then(() => toast('Join link copied'));
+    box.querySelectorAll('[data-sh-remove]').forEach(b => b.onclick = async () => {
+      if (!await confirmDialog({ title: 'Remove member?', message: 'They keep their own copy of the sources but won’t see new changes.', confirm: 'Remove', danger: true })) return;
+      try { await cloudMod.removeMember(p, b.dataset.shRemove); delete p.shared.members[b.dataset.shRemove]; draw(); toast('Removed'); } catch (err) { toast(err.message, { error: true }); }
+    });
+    $('[data-sh-stop]', box)?.addEventListener('click', async () => { m.close(); await stopGroup(p.id, false); });
+    $('[data-sh-leave]', box)?.addEventListener('click', async () => { m.close(); await leaveGroup(p.id); });
+  };
+  draw();
+}
+
+async function leaveGroup(projectId) {
+  const p = S.project(projectId);
+  if (!await confirmDialog({ title: 'Leave this group project?', message: `“${esc(p.name)}” will be removed from your projects. The group keeps it.`, confirm: 'Leave', danger: true })) return;
+  try { await cloudMod.leaveShared(p); toast(`Left “${p.name}”`); } catch (e) { toast(e.message, { error: true }); }
+}
+
+async function stopGroup(projectId, deleting) {
+  const p = S.project(projectId);
+  const ok = await confirmDialog({
+    title: deleting ? 'Delete for everyone?' : 'Stop sharing?',
+    message: deleting ? `“${esc(p.name)}” stops being shared and is deleted for you. Members keep their own copies.` : `Members keep their own copy of the sources but won’t see changes any more. Yours becomes a normal project again.`,
+    confirm: deleting ? 'Delete' : 'Stop sharing', danger: true,
+  });
+  if (!ok) return;
+  try {
+    await cloudMod.stopSharing(p);
+    if (deleting) S.deleteProject(p.id); // p is now your personal copy
+    toast(deleting ? 'Deleted' : 'Sharing stopped');
+  } catch (e) { toast(e.message, { error: true }); }
+}
+
+// Opening citemyshi.web.app/?join=… : join after signing in
+const pendingJoin = new URLSearchParams(location.search).get('join');
+if (pendingJoin) { const u = new URL(location.href); u.searchParams.delete('join'); history.replaceState(null, '', u); }
+let joinPrompted = false;
+async function handleJoin() {
+  if (!pendingJoin || !cloudMod?.cloud?.ready) return;
+  if (state.projects.some(x => x.shared?.id === pendingJoin)) { const p = state.projects.find(x => x.shared?.id === pendingJoin); S.setActive(p.id); return; }
+  if (!cloudMod.cloud.user) {
+    if (joinPrompted) return;
+    joinPrompted = true;
+    const m = openModal({ title: 'Join a group project', body: `<p style="margin:0 0 12px;color:var(--text-2)">You’ve been invited to work on a citemyshi project with your group. Sign in with Google to join.</p><button class="btn btn-primary" data-join-signin>${GOOGLE_G} Sign in and join</button>`, foot: '<span class="spacer"></span><button class="btn" data-close-btn>Not now</button>' });
+    $('[data-close-btn]', m.el).onclick = () => m.close();
+    $('[data-join-signin]', m.el).onclick = async () => { m.close(); await doSignIn(); };
+    return;
+  }
+  try { const p = await cloudMod.joinShared(pendingJoin); toast(`Joined “${p.name}” — changes you make are shared with the group`); }
+  catch (e) { toast(e.message, { error: true, duration: 9000 }); }
+  joinDone = true;
+}
+let joinDone = false;
+
 // Connection code for the Word / Google Docs add-ins
 async function openConnect(projectId) {
   const p = S.project(projectId);
@@ -318,6 +411,7 @@ function wireTopbar() {
   tb.addEventListener('click', e => {
     if (e.target.closest('[data-style]')) openStylePicker();
     if (e.target.closest('[data-style-help]')) openStyleHelp();
+    if (e.target.closest('[data-share-open]')) openShare(state.activeId);
     if (e.target.closest('[data-nav]')) document.body.classList.add('nav-open');
     if (e.target.closest('[data-proj-notes]')) { ui.showProjectNotes = !ui.showProjectNotes; renderTopbar(); if (ui.showProjectNotes) $('#projNotes textarea')?.focus(); }
   });
@@ -1052,7 +1146,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if
 import('./cloud.js').then(m => {
   cloudMod = m;
   let lastErr = null;
+  m.onSharedNotice(msg => toast(msg, { duration: 9000 }));
   m.onCloudChange(c => {
+    if (pendingJoin && !joinDone && c.ready && (c.user ? c.status === 'synced' || c.status === 'error' : true)) handleJoin();
     renderSidebar();
     if (c.status === 'error' && c.error && c.error !== lastErr) toast(c.error, { error: true, duration: 10000 });
     lastErr = c.error;

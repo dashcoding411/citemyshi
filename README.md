@@ -47,6 +47,13 @@ The style catalog, bundled styles and languages are already in the repo. Run `np
 - Typing searches all 10,869 styles and understands abbreviations (AGLC, OSCOLA, MHRA, APA7, Vancouver…).
 - 63 citation languages. By default each style uses its own language, so AGLC and OSCOLA get British quotes.
 
+**Writing your essay**
+- **Saved quotes** on each source with page/paragraph numbers, copied already cited in your style (block quotes for long ones).
+- **Drop a PDF** onto the cite box: it's read in your browser (never uploaded) and matched by DOI, arXiv ID, ISBN or title.
+- **Footnote planner**: list your citations in essay order and get every footnote right — Ibid, (n 3), short forms — or IEEE/Vancouver numbering by first citation.
+- **Word and Google Docs add-ins** (see `/addins.html`): insert citations and footnotes, renumber everything with Update citations, insert the bibliography. They read a project through a private 12-character connection code.
+- **Group projects**: share a project with a join link; everyone can add and edit sources, notes and quotes live. Simultaneous edits are merged per source; the owner can remove people or stop sharing (everyone keeps a copy).
+
 **Organising**
 - Projects grouped into coloured **folders**. Drag projects into folders.
 - **Notes** on each citation. They also appear as annotations when you pick an "annotated bibliography" style.
@@ -71,6 +78,11 @@ The style catalog, bundled styles and languages are already in the repo. Run `np
 Already set up on the `citemyshi` Firebase project: Google sign-in is enabled, the Firestore database exists, and `firestore.rules` is deployed, so each person can only read and write their own projects. `citemyshi.web.app` is authorised for sign-in automatically. If you add another domain, add it under Authentication → Settings → Authorized domains.
 
 To change the rules, run `firebase deploy --only firestore:rules --project citemyshi`.
+
+## Tests
+
+- `npm test` — citation output in 9 styles and every source type, legal citations and footnotes, sentence casing, parsing, the paper checker, group-project merging.
+- `npm run test:rules` — the Firestore security rules (personal data, add-in codes, group projects), checked in the Firebase emulator (needs Java).
 
 ## Optional
 

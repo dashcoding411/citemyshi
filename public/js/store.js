@@ -232,6 +232,7 @@ export function mergeRemote({ meta, projects }) {
   state.folders = [...folders.values()].filter(f => !deleted[f.id]);
   state.recentStyles = [...new Set([...(state.recentStyles || []), ...(meta?.recentStyles || [])])].slice(0, 8);
   state.deleted = deleted;
+  state.sharedIds = [...new Set([...(state.sharedIds || []), ...(meta?.shared || [])])].filter(sid => !deleted[`sh:${sid}`]);
   if (!project(state.activeId)) state.activeId = state.projects[0].id;
   emit({ projects: true, project: true, format: true });
 }
@@ -258,6 +259,7 @@ export function applyRemoteDelete(id) {
 
 export function applyRemoteMeta(meta) {
   state.deleted = { ...(state.deleted || {}), ...(meta.deleted || {}) };
+  state.sharedIds = [...new Set([...(state.sharedIds || []), ...(meta.shared || [])])].filter(sid => !state.deleted[`sh:${sid}`]);
   state.folders = (meta.folders || []).filter(f => !state.deleted[f.id]);
   for (const p of state.projects) if (p.folderId && !state.folders.some(f => f.id === p.folderId)) p.folderId = null;
   state.recentStyles = meta.recentStyles || state.recentStyles;
@@ -306,13 +308,31 @@ export function applyRemoteShared(sid, remote, info) {
   return p;
 }
 
-export function removeShared(sid) {
+export function rememberShared(sid) {
+  state.sharedIds = [...new Set([...(state.sharedIds || []), sid])];
+  if (state.deleted) delete state.deleted[`sh:${sid}`];
+}
+
+// You left (keepCopy = false) or the owner stopped sharing (keepCopy = true:
+// you keep your own copy of the sources)
+export function removeShared(sid, { keepCopy = false } = {}) {
+  state.sharedIds = (state.sharedIds || []).filter(x => x !== sid);
+  tombstone(`sh:${sid}`);
   const idx = state.projects.findIndex(x => x.shared?.id === sid);
-  if (idx < 0) return;
-  const [p] = state.projects.splice(idx, 1);
-  if (!state.projects.length) state.projects.push(blankProject('My first bibliography'));
-  if (state.activeId === p.id) state.activeId = state.projects[0].id;
+  if (idx < 0) { emit({}); return null; }
+  const p = state.projects[idx];
+  if (keepCopy) {
+    delete p.shared;
+    if (p.id.startsWith('sh_')) { const old = p.id; p.id = uid(); if (state.activeId === old) state.activeId = p.id; }
+    p.name = `${p.name} (copy)`;
+    p.updatedAt = Date.now();
+  } else {
+    state.projects.splice(idx, 1);
+    if (!state.projects.length) state.projects.push(blankProject('My first bibliography'));
+    if (state.activeId === p.id) state.activeId = state.projects[0].id;
+  }
   emit({ projects: true, project: true, format: true, remote: true });
+  return p;
 }
 
 // ---------- backup ----------
