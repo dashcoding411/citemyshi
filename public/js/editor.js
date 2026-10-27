@@ -301,7 +301,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
       else toast(`Added to ${p.name}`);
       onSaved?.(added);
     } else {
-      if (['Webpage', 'PDF', 'URL'].includes(out._source)) out._checked = true;
+      if (['Webpage', 'PDF', 'URL', 'Web archive'].includes(out._source)) out._checked = true;
       replaceItem(item.id, out, p.id);
       m.close('force');
       toast('Citation updated');

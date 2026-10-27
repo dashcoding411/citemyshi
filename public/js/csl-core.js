@@ -160,7 +160,13 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
   const isUS = item => /^(US|USA|U\.S\.|United States)$/i.test(String(item['container-title'] || '')) || /United States Reports|Federal Reporter|Supreme Court Reporter|^U\.?S\.?$|^F\s?\d?d$|^S\s?Ct$/i.test(String(item['container-title-short'] || item['container-title'] || ''));
   const esc = t => String(t).replace(/&/g, '&#38;').replace(/</g, '&#60;').replace(/>/g, '&#62;');
   function localLegal(item) {
-    if (!['legislation', 'bill', 'legal_case'].includes(item.type) || isUS(item) || !item.title) return null;
+    if (!['legislation', 'bill', 'legal_case'].includes(item.type) || isUS(item)) return null;
+    // A case known only by its neutral citation still prints as one: [1992] HCA 23
+    if (!item.title && item.type === 'legal_case' && item.authority && item.number && item.issued) {
+      const t = `[${item.issued['date-parts'][0][0]}] ${item.authority} ${item.number}`;
+      return { html: esc(t), text: t };
+    }
+    if (!item.title) return null;
     const year = item.issued?.['date-parts']?.[0]?.[0];
     if (item.type === 'legal_case') {
       const report = item['container-title-short'] || item['container-title'];

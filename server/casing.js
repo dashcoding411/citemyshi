@@ -102,8 +102,10 @@ export function toSentenceCase(title) {
       words.push({ i, lead, core, trail, start: sentenceStart, cap: /^\p{Lu}/u.test(core) });
       sentenceStart = false;
     }
-    // A new "sentence" starts after : ? ! . and dashes (APA capitalises subtitles)
-    if (/[:?!.]$/.test(trail) || /^[–—-]+$/.test(token)) sentenceStart = true;
+    // A new "sentence" starts after : ? ! . and dashes (APA capitalises subtitles) —
+    // but not after an abbreviation: "U.N. climate report", "Dr. Smith", "vs. the world"
+    const abbrev = /^(\p{L}\.)+\p{L}?$/u.test(core + trail.replace(/\.$/, '')) && /\./.test(core + trail) || /^(dr|mr|mrs|ms|st|vs|no|vol|etc|inc|ltd|co|jr|sr|prof)$/i.test(core);
+    if (/[:?!]$/.test(trail) || (/\.$/.test(trail) && !abbrev) || /^[–—-]+$/.test(token)) sentenceStart = true;
   }
 
   // Pass 1: decide each word on its own
@@ -164,6 +166,18 @@ export function toSentenceCase(title) {
     if (isName(bare(next)) || nameLike(next)) { cur.out = allCaps ? cur.core[0] + cur.core.slice(1).toLowerCase() : cur.core; cur.kept = true; }
   }
 
+  // After a title: "Dr. Smith", "Mr. Brown", "St. Kilda"
+  for (let a = 1; a < words.length; a++) {
+    const t = words[a - 1].core.toLowerCase(), w = words[a];
+    if (!w.cap) continue;
+    const short = /^(dr|mr|mrs|ms|mx|prof|st|capt)$/.test(t) && /\./.test(words[a - 1].trail);
+    const long = /^(sir|dame|lord|lady|captain|president|senator|judge|justice|premier|minister|chancellor|king|queen|pope)$/.test(t) && !isOrdinary(w.core);
+    if (short || long) {
+      if (!w.kept) { w.out = allCaps ? w.core[0] + w.core.slice(1).toLowerCase() : w.core; w.kept = true; }
+      if (long) { const h = words[a - 1]; h.out = allCaps ? h.core[0] + h.core.slice(1).toLowerCase() : h.core; h.kept = true; }
+    }
+  }
+
   // "the West", "the Global South": geopolitical regions
   for (let a = 1; a < words.length; a++) {
     const w = words[a], prev = words[a - 1];
@@ -197,4 +211,15 @@ export function normalizeTitleCase(item) {
   const sentence = toSentenceCase(item.title);
   if (sentence !== item.title) return { ...item, title: sentence, _titleAsPublished: item.title };
   return item;
+}
+
+// Titles guessed from a link ("salvadoran-soldiers-haiti-dead"): restore capitals on
+// words that are only ever names ("Haiti", "Salvadoran")
+export function capitaliseNames(text) {
+  if (!LOWER.size) return text;
+  return String(text).replace(/\p{L}[\p{L}'’]*/gu, (w, i) => {
+    const lw = w.toLowerCase();
+    if (PROPER.has(lw) && !known(lw)) return PROPER.get(lw);
+    return i === 0 ? w[0].toUpperCase() + w.slice(1) : w;
+  });
 }

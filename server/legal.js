@@ -66,8 +66,17 @@ function parseCase(text) {
 }
 
 export function parseLegalCitation(text) {
-  const s = String(text || '').trim();
+  let s = String(text || '').trim();
   if (s.length < 6 || s.length > 300 || /^https?:/i.test(s)) return null;
+  // Case nicknames aren't part of the name: Mabo v Queensland (No 2) ("Mabo case")
+  s = s.replace(/\s*\(\s*["“][^"”]*["”]\s*\)/g, '');
+  // Reported and neutral citations together: AGLC 4 r 2.3 cites the report,
+  // "Mabo v Queensland (No 2) [1992] HCA 23; (1992) 175 CLR 1" -> "(1992) 175 CLR 1"
+  const parallel = s.match(/^(.+?)\s+\[(\d{4})\]\s+([A-Z][A-Za-z]*)\s+(\d+)\s*;\s*(\(\d{4}\)\s+\d+\s+\S.*)$/);
+  if (parallel) {
+    const r = parseCase(`${parallel[1]} ${parallel[5]}`);
+    if (r) return { ...r, item: { ...r.item, authority: r.item.authority || parallel[3], number: r.item.number || parallel[4] } };
+  }
   return parseAct(s) || (/\bv\b|^Re\s|^In re\s|\[\d{4}\]|\(\d{4}\)/.test(s) ? parseCase(s) : null);
 }
 

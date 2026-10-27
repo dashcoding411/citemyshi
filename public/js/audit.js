@@ -8,7 +8,7 @@ import { active } from './store.js';
 import { missingInfo } from './types.js';
 
 // Sources backed by an official registry or platform API
-const VERIFIED = new Set(['DOI', 'ISBN', 'PubMed', 'PubMed Central', 'arXiv', 'Crossref', 'Google Books', 'book search', 'Wikipedia', 'YouTube', 'Vimeo', 'Zotero translator']);
+const VERIFIED = new Set(['DOI', 'ISBN', 'PubMed', 'PubMed Central', 'arXiv', 'Crossref', 'Google Books', 'book search', 'Wikipedia', 'YouTube', 'Vimeo', 'Zotero translator', 'Stanford Encyclopedia of Philosophy']);
 const SCANNED = new Set(['Webpage', 'PDF']);
 
 export function sourceBadge(item) {
@@ -18,11 +18,13 @@ export function sourceBadge(item) {
   if (item._checked) return `<span class="src-pill ok" title="You reviewed and saved these details">${icon('check')} Checked by you</span>`;
   if (SCANNED.has(s)) return `<span class="src-pill" title="Read from the page’s own metadata — worth a quick check">${icon('globe')} Scanned from ${s === 'PDF' ? 'PDF' : 'page'}</span>`;
   if (s === 'URL') return `<span class="src-pill warn" title="The page couldn’t be opened, so details were guessed from the link">${icon('link')} Guessed from link</span>`;
+  if (s === 'Web archive') return `<span class="src-pill" title="The site blocks automated reading, so details came from the Internet Archive’s copy of the page">${icon('globe')} Read from archived copy</span>`;
+  if (s === 'legal database' || s === 'legal citation') return `<span class="src-pill ok" title="Read from the legal database or the citation you typed">${icon('check')} ${s === 'legal database' ? 'Legal database' : 'From the citation'}</span>`;
   if (s === 'Imported') return `<span class="src-pill">${icon('upload')} Imported</span>`;
   return `<span class="src-pill">${icon('pencil')} Entered manually</span>`;
 }
 
-export const needsReview = s => SCANNED.has(s) || s === 'URL';
+export const needsReview = s => SCANNED.has(s) || s === 'URL' || s === 'Web archive';
 
 const isEmpty = v => v == null || v === '' || (Array.isArray(v) && !v.length);
 

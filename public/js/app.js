@@ -1,6 +1,6 @@
 import { $, $$, esc, api, warmUp, debounce, toast, openMenu, closeMenu, openModal, confirmDialog, promptDialog, copyRich, download, tagColor, FOLDER_COLORS, topModal } from './ui.js';
 import { icon } from './icons.js';
-import { CITE_TABS, SOURCE_TYPES, sourceTypeFor, missingInfo } from './types.js';
+import { CITE_TABS, SOURCE_TYPES, sourceTypeFor, missingInfo, checkInfo } from './types.js';
 import * as S from './store.js';
 import { state, active } from './store.js';
 import { openEditor } from './editor.js';
@@ -707,6 +707,7 @@ function citeHtml(item) {
   const f = ui.fmt?.projectId === p.id ? ui.fmt.byId.get(item.id) : null;
   const t = sourceTypeFor(item);
   const missing = missingInfo(item);
+  const checks = checkInfo(item);
   const hanging = ui.fmt?.params?.hangingIndent;
   const sel = ui.selected.has(item.id);
   const intext = f?.intext?.paren;
@@ -722,6 +723,7 @@ function citeHtml(item) {
           ${sourceBadge(item)}
           ${intext ? `<span class="intext-preview">· ${ui.fmt.style.isNote ? 'Note' : 'In-text'}: ${intext.replace(/<[^>]+>/g, '')}</span>` : ''}
           ${missing.length ? `<button class="warn-pill" data-edit title="Missing: ${esc(missing.join(', '))}">${icon('alert')} Missing ${esc(missing.slice(0, 2).join(', ').toLowerCase())}${missing.length > 2 ? ` +${missing.length - 2}` : ''}</button>` : ''}
+          ${!missing.length && !item._checked && checks.length ? `<button class="warn-pill" data-edit title="${esc(checks.join(' · '))}">${icon('alert')} ${esc(checks[0].split(' — ')[0])}</button>` : ''}
           ${(item._tags || []).map(tg => `<button class="chip" style="${tagColor(tg)}" data-tag-filter="${esc(tg)}">${esc(tg)}</button>`).join('')}
         </div>
         ${ui.editingNote === item.id

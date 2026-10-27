@@ -118,9 +118,21 @@ export function missingInfo(item) {
   return missing.map(f => f === 'author' ? 'Author' : (t.labels?.[f] || (f === 'container-title' ? t.container : null) || FIELD_DEFS[f]?.label || f));
 }
 
+// Details that are present but probably incomplete — the things markers notice
+const TEXTBOOK_PUBLISHERS = /pearson|cengage|mcgraw|wiley|elsevier|oxford university press|cambridge university press|sage|routledge|palgrave|macmillan|thomson|prentice|addison|jones (&|and) bartlett|lippincott|wolters|mosby|saunders|churchill|w\. ?w\. ?norton|freeman/i;
+export function checkInfo(item) {
+  const out = [];
+  const page = String(item.page || '').trim();
+  if (['article-journal', 'article-magazine', 'chapter', 'paper-conference'].includes(item.type) && /^\d+$/.test(page) && !item.number) out.push('Only the first page is listed — add the last page (e.g. 263–291)');
+  if (item.type === 'book' && !item.edition && (TEXTBOOK_PUBLISHERS.test(item.publisher || '') || +item['number-of-pages'] >= 500)) out.push('If this isn’t the 1st edition, add the edition (it’s on the cover or copyright page)');
+  if (item.title && item.title.length > 12 && item.title === item.title.toUpperCase() && /[A-Z]{4}/.test(item.title)) out.push('The title is in capitals — retype it in normal case');
+  for (const n of item.author || []) if (n.family && !n.given && !n.literal) { out.push(`Add ${n.family}’s first name or initial`); break; }
+  return out;
+}
+
 // Short, practical advice shown in the editor for each kind of source
 const TYPE_TIPS = {
-  website: 'No named author? Leave it blank — the title moves to the front. Only use an organisation as author if it wrote the page.',
+  website: 'No named author? On an organisation’s own site (WHO, ABS, a university, a government department) the organisation is the author. Otherwise leave it blank — the title moves to the front. Use the “last updated” date if the page shows one.',
   book: 'Only add an edition if it isn’t the first. Use the publisher’s name, not the printer’s.',
   chapter: 'Put the chapter’s author as Author and the book’s editors as Editor (choose the role on the left).',
   journal: 'Add the DOI if the article has one — APA, Harvard and Vancouver expect it. Volume, issue and pages matter too.',

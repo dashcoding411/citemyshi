@@ -149,6 +149,17 @@ const LEGISLATION_PINPOINTS = [['s', 'Section'], ['pt', 'Part'], ['div', 'Divisi
 const PLURAL = { s: 'ss', pt: 'pts', div: 'divs', sch: 'schs', reg: 'regs', r: 'rr', cl: 'cll', art: 'arts' };
 const CASE_PINPOINTS = [['page', 'Page'], ['para', 'Paragraph [ ]']];
 
+// How each family of styles cites a source quoted inside the one you read
+// (APA 7 8.6, Cite Them Right, MLA 9 6.77, Chicago 15.52)
+export function secondaryCitation(style, r, author, year) {
+  const inner = r.paren.replace(/^\(|\)$/g, '');
+  if (/^\s*(<[^>]+>)*[[(]?\d+/.test(r.paren)) return { paren: r.paren, narrative: r.narrative }; // numbered styles: say it in your sentence
+  if (/^modern-language/.test(style)) return { paren: `(qtd. in ${inner})`, narrative: `${author} (qtd. in ${inner})` };
+  const [phrase, sep] = /^apa/.test(style) ? ['as cited in', ', '] : /^chicago|turabian/.test(style) ? ['quoted in', ' '] : ['cited in', ', '];
+  const orig = year ? `${author}${sep}${year}` : author;
+  return { paren: `(${orig}, ${phrase} ${inner})`, narrative: `${author} (${year ? `${year}, ` : ''}${phrase} ${inner})` };
+}
+
 export function openInText(item) {
   const p = active();
   let last = {};
@@ -167,6 +178,12 @@ export function openInText(item) {
         <div class="field"><label>Cite a specific</label><select class="select" id="loc-label">${labels.map(([k, l]) => `<option value="${k}" ${k === preKey ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="field"><label>Number (optional)</label><input class="input" id="loc" placeholder="${isAct ? 'e.g. 9 or 18–20' : 'e.g. 42 or 42-45'}" value="${esc(preValue)}" autofocus></div>
       </div>
+      ${isAct || isCase ? '' : `<details class="secondary-src" style="margin:-4px 0 14px"><summary style="cursor:pointer;color:var(--text-2);font-size:13px">Quoting someone this source quotes? (secondary source)</summary>
+        <div class="grid" style="grid-template-columns:1fr 110px;margin-top:10px">
+          <div class="field"><label>Original author(s)</label><input class="input" id="sec-author" placeholder="e.g. Piaget"></div>
+          <div class="field"><label>Original year</label><input class="input" id="sec-year" placeholder="e.g. 1952"></div>
+        </div>
+        <p style="color:var(--muted);font-size:12px;margin:6px 0 0">Only the source you actually read goes in the reference list — this one.</p></details>`}
       <div id="intext-out"><div class="skel"><div style="width:40%"></div></div></div>
       <p style="color:var(--muted);font-size:12.5px;margin:12px 0 0">Tip: in-text citations go in your writing right after the quote or paraphrase.</p>`,
     foot: '<span class="spacer"></span><button class="btn" data-done>Done</button>',
@@ -193,6 +210,9 @@ export function openInText(item) {
         r.paren = r.paren.replace(/\bpp?\.\s*/, '');
         r.narrative = r.narrative.replace(/\bpp?\.\s*/, '');
       }
+      // Secondary sources: (Piaget, 1952, as cited in Smith, 2020, p. 5)
+      const secAuthor = $('#sec-author', m.el)?.value.trim(), secYear = $('#sec-year', m.el)?.value.trim();
+      if (secAuthor && !r.isNote) Object.assign(r, secondaryCitation(p.style, r, esc(secAuthor), esc(secYear)));
       last = r;
       out.innerHTML = [
         [r.isNote ? 'Footnote' : 'Parenthetical', r.paren],
@@ -208,6 +228,7 @@ export function openInText(item) {
     } catch (e) { out.innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; }
   }, 200);
   $('#loc', m.el).oninput = run;
+  for (const id of ['#sec-author', '#sec-year']) { const el = $(id, m.el); if (el) el.oninput = run; }
   $('#loc-label', m.el).onchange = run;
   $('[data-done]', m.el).onclick = () => m.close();
   run();
