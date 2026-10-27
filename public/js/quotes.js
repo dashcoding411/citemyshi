@@ -75,7 +75,7 @@ export async function quoteWithCitation(item, q, fmt) {
   const p = active();
   const loc = q.locator && q.label === 'timestamp' ? q.locator : q.locator;
   const label = q.label === 'timestamp' ? 'page' : q.label || 'page';
-  const r = await formatInText({ item, style: p.style, lang: p.lang, locator: loc, label });
+  const r = await formatInText({ item, items: p.items, style: p.style, lang: p.lang, locator: loc, label });
   if (q.label === 'timestamp' && loc) { r.paren = r.paren.replace(/\bpp?\.\s*/, ''); }
   let cite = r.paren;
   // Numbered styles: use the reference's number from the bibliography

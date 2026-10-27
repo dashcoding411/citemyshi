@@ -29,5 +29,10 @@ try {
     else if (!proper.has(w.toLowerCase())) proper.set(w.toLowerCase(), w);
   }
 } catch { console.warn('  (no /usr/share/dict/words — using Hunspell only)'); }
-await fs.writeFile(path.join(root, 'data', 'words.json'), JSON.stringify({ lower: [...lower].sort(), proper: Object.fromEntries([...proper].sort()) }));
-console.log(`words: ${lower.size} common, ${proper.size} proper nouns → data/words.json`);
+// First names, so "Theresa May" and "Brené Brown" keep their surnames
+const given = new Set();
+try {
+  for (const word of (await fs.readFile('/usr/share/dict/propernames', 'utf8')).split('\n')) if (word.trim()) given.add(word.trim().toLowerCase());
+} catch { console.warn('  (no /usr/share/dict/propernames — no first-name list)'); }
+await fs.writeFile(path.join(root, 'data', 'words.json'), JSON.stringify({ lower: [...lower].sort(), proper: Object.fromEntries([...proper].sort()), given: [...given].sort() }));
+console.log(`words: ${lower.size} common, ${proper.size} proper nouns, ${given.size} first names → data/words.json`);

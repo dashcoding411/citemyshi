@@ -1,6 +1,8 @@
 // The citation formatter shared by the browser worker (format-worker.js) and
 // the test suite. `getText(path)` reads files shipped with the site
 // (/styles/*.csl, /locales/*); `getServerStyle(name)` fetches any other style.
+import { tidyEdition } from './edition.js';
+
 export function createFormatter({ CSL, getText, getServerStyle }) {
   const styles = new Map();  // name -> Promise<{ name, title, isNote, defaultLocale, xml }>
   const locales = new Map(); // code -> xml
@@ -125,13 +127,24 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
   const NP = /\[?NO_PRINTED_FORM\]?/g;
   // "p. s 9" / "p. [42]" -> "s 9" / "[42]" (legal pinpoints carry their own label)
   const cleanPin = h => String(h).replace(/\b(?:pp?\.)\s*(?=(?:ss?|pts?|schs?|regs?|rr?|cll?|arts?|divs?)\s|\[)/g, '');
-  function inText(engine, style, cite) {
-    const paren = engine.makeCitationCluster([cite]);
+  function inText(engine, style, cite, item) {
+    let paren = engine.makeCitationCluster([cite]);
+    if (/CSL STYLE ERROR/.test(paren)) paren = item?.title ? `(${esc(item.title)})` : '';
     let narrative = '';
     if (!style.isNote) {
-      const a = engine.makeCitationCluster([{ ...cite, 'author-only': true }]).replace(NP, '').trim();
+      let a = engine.makeCitationCluster([{ ...cite, 'author-only': true }]).replace(NP, '').trim();
       const rest = engine.makeCitationCluster([{ ...cite, 'suppress-author': true }]).replace(NP, '').replace(/^\(\s*\)$|^\[\s*\]$/, '').trim();
-      if (a && a !== paren) narrative = rest ? `${a} ${rest}` : a;
+      // Take the name from the parenthetical so a title standing in for the
+      // author keeps its quotes or italics: “Photosynthesis” (2024)
+      const inner = paren.replace(/^\(|\)$/g, ''), restInner = rest.replace(/^\(|\)$/g, '');
+      if (a && !restInner && inner !== paren && !/\d/.test(inner)) a = inner; // MLA: (“Title”) -> “Title”
+      else if (a && restInner && inner !== paren && inner.endsWith(restInner)) {
+        const lead = inner.slice(0, -restInner.length).trim().replace(/,(?=(<\/i>)?$)/, '').replace(/,(”|’)(?=(<\/i>)?$)/, '$1').trim();
+        if (lead) a = lead;
+      }
+      // Prose uses "and": "Ladds and Keating (2017)", never "Ladds & Keating (2017)"
+      if (!(item?.author || []).some(n => /&/.test(n.literal || ''))) a = a.replace(/\s(?:&#38;|&amp;|&)\s/g, ' and ');
+      if (a && a !== paren && !/CSL STYLE ERROR/.test(a)) narrative = rest ? `${a} ${rest}` : a;
     }
     return { paren, narrative };
   }
@@ -172,10 +185,95 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     if (before && !/[:?!.—–-]$/.test(before) && MINOR.has(word.toLowerCase())) return word.toLowerCase();
     return word[0].toUpperCase() + word.slice(1);
   });
+  // "World Health Organization" vs "World Health Organization" / "AIHW" / "who.int"
+  const normOrg = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/^the\s+/, '')
+    .replace(/\.(com|org|net|gov|edu|int)(\.[a-z]{2})?$/, '').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
+  const acronym = s => String(s).split(/[\s-]+/).filter(w => w && !/^(of|and|the|for|on|in|&)$/i.test(w)).map(w => w[0]).join('').toLowerCase();
+  const isAcronym = s => /^[A-Z]{2,8}$/.test(String(s || '').trim());
+  function sameOrg(a, b) {
+    if (!a || !b) return false;
+    const x = normOrg(a), y = normOrg(b);
+    if (!x || !y) return false;
+    if (x === y) return true;
+    // AIHW = Australian Institute of Health and Welfare; CDC = Centers for Disease Control (and Prevention)
+    const [short, long] = isAcronym(a) ? [a, b] : isAcronym(b) ? [b, a] : [];
+    return !!short && !isAcronym(long) && acronym(long).startsWith(short.trim().toLowerCase()) && short.trim().length >= 3;
+  }
+
+  // Descriptions MLA 9 doesn't put in Works Cited ("Video.", "Film.", "Song.")
+  const MEDIA_LABEL = /^(film|movie|video|online video|song|album|track|music|audio|tv series episode|tv episode|television episode|tv series|television series|audio podcast episode|podcast episode|podcast|video podcast episode|radio broadcast)$/i;
+  const SOCIAL_LABELS = { x: 'Post', twitter: 'Post', threads: 'Post', bluesky: 'Post', linkedin: 'Post', mastodon: 'Post', facebook: 'Status update', instagram: 'Photograph', tiktok: 'Video', reddit: 'Online forum post', youtube: 'Video' };
+  const mlaPress = p => String(p).replace(/\bUniversity of ([\p{L} .'’-]+?) Press\b/u, 'U of $1 P').replace(/\bUniversity Press\b/, 'UP');
+
   function styleFixes(style, item) {
+    const apa = /^apa/.test(style.name), mla = /^modern-language/.test(style.name), aglc = /^australian-guide-to-legal/.test(style.name);
+    item = { ...item };
+    // Journal articles are never cited with the journal's handling editor (Crossref lists them)
+    if (item.type === 'article-journal') delete item.editor;
+    // eLocators ("e0209899") are article numbers, not pages
+    if (item.type === 'article-journal' && !item.number && /^e\d{3,}$/i.test(String(item.page || '').trim()) && (apa || mla)) { item.number = item.page; delete item.page; }
+
+    // The same organisation as author and as publisher/website: APA, Harvard,
+    // Chicago… print it once, as the author; MLA 9 skips the author instead
+    const org = item.author?.length === 1 && item.author[0].literal;
+    if (org) {
+      const periodical = ['article-journal', 'article-magazine', 'article-newspaper'].includes(item.type);
+      const dupContainer = sameOrg(org, item['container-title']), dupPublisher = sameOrg(org, item.publisher);
+      if (mla || periodical) { if ((mla && (dupContainer || dupPublisher)) || (periodical && dupContainer)) delete item.author; }
+      else {
+        if (dupContainer && !/^(entry|chapter|paper-conference)/.test(item.type)) delete item['container-title'];
+        if (dupPublisher) delete item.publisher;
+      }
+    }
+
+    if (apa) {
+      // APA 7: [Post] on X, [Status update] on Facebook, [Video] on TikTok…
+      const platform = String(item['container-title'] || '').toLowerCase().replace(/\s*\(.*\)$/, '');
+      if (item.type === 'post' && !item.genre && SOCIAL_LABELS[platform]) item.genre = SOCIAL_LABELS[platform];
+      // Podcasts are credited to the host: "Glass, I. (Host)."
+      if (/podcast/i.test(`${item.medium || ''} ${item.genre || ''}`) && item.author?.length && !item.host) { item.host = item.author; delete item.author; }
+      // APA 7 (10.6): a thesis not from a database or archive is "Unpublished"
+      if (item.type === 'thesis' && item.genre && !item.URL && !item.DOI && !item.archive && !/unpublished/i.test(item.genre)) item.genre = `Unpublished ${item.genre[0].toLowerCase()}${item.genre.slice(1)}`;
+      // Wikipedia: the permanent link to the version you read (APA 7, 10.3)
+      if (item._permalink) item.URL = item._permalink;
+    }
+    if (mla) {
+      if (['motion_picture', 'broadcast', 'song', 'webpage', 'post'].includes(item.type)) {
+        if (MEDIA_LABEL.test(String(item.genre || '').trim())) delete item.genre;
+        if (MEDIA_LABEL.test(String(item.medium || '').trim())) delete item.medium;
+      }
+      if (/^season \d+, episode \d+$/i.test(String(item.number || ''))) item.number = String(item.number).toLowerCase();
+      if (item.type === 'graphic' && /^(painting|photograph|sculpture|drawing|artwork|print|image)$/i.test(String(item.genre || ''))) delete item.genre;
+      // MLA 9 gives a city only for newspapers that need one
+      if (item.type !== 'article-newspaper') delete item['publisher-place'];
+      if (item.publisher) item.publisher = mlaPress(item.publisher);
+      // Article numbers aren't part of an MLA entry
+      if (item.type === 'article-journal') { if (item.number && (!item.page || String(item.page) === String(item.number))) delete item.page; delete item.number; }
+      if (/^wikipedia$/i.test(String(item['container-title'] || '')) && !item.publisher) item.publisher = 'Wikimedia Foundation';
+    }
+    if (aglc) {
+      // AGLC 4 r 7.15–7.16: the document type goes in brackets — (Web Page, 1 May 2024), (Blog Post, …), (X, …)
+      if (item.type === 'webpage' && !item.genre) item.genre = 'Web Page';
+      if (item.type === 'post-weblog' && !item.genre) item.genre = 'Blog Post';
+      if (item.type === 'post') {
+        item.genre = item['container-title'] || item.genre || 'Social Media Post';
+        delete item['container-title'];
+        item.type = 'webpage';
+        // A post is quoted as written, never title-cased
+        if (item.title) item.title = `<span class="nocase">${item.title}</span>`;
+      }
+    }
+
     // Acts: the style prints the year itself, so "Corporations Act 2001" + 2001 would double it
     const year = item.issued?.['date-parts']?.[0]?.[0];
     if (['legislation', 'bill'].includes(item.type) && year && item.title && new RegExp(`\\s${year}$`).test(item.title.trim())) item = { ...item, title: item.title.trim().replace(new RegExp(`\\s${year}$`), '') };
+    // "3rd edition" typed by hand -> "3" (the style adds "3rd ed." / "3rd edn" itself)
+    if (item.edition != null && item.edition !== '') { const e = tidyEdition(item.edition); if (e) item = { ...item, edition: e }; else { item = { ...item }; delete item.edition; } }
+    // Worded editions are stored as "Rev. ed." / "Global ed."; Cite Them Right writes "edn", AGLC "rev ed"
+    if (/ ed\.$/.test(String(item.edition || ''))) {
+      if (/cite-them-right|harvard/.test(style.name)) item = { ...item, edition: item.edition.replace(/ ed\.$/, ' edn') };
+      if (aglc) item = { ...item, edition: item.edition.replace(/^Rev\. ed\.$/, 'rev ed').replace(/\.$/, '') };
+    }
     // AGLC 4 r 6.3: "2nd ed" (the style would print "2ⁿᵈ edn")
     if (/^australian-guide-to-legal/.test(style.name) && /^\d+$/.test(String(item.edition || ''))) item = { ...item, edition: `${ordinal(+item.edition)} ed` };
     // IEEE adds "arXiv:" itself
@@ -213,9 +311,10 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     // Some sources are cited in-text only (APA personal communications, Chicago
     // notes-only sources) — still give them their in-text citation
     const outside = clean.map(i => i.id).filter(id => !ids.includes(id));
+    const byId = new Map(clean.map(i => [i.id, i]));
     const intext = {};
     for (const id of [...ids, ...outside]) {
-      try { intext[id] = inText(engine, style, { id }); } catch { intext[id] = { paren: '', narrative: '' }; }
+      try { intext[id] = inText(engine, style, { id }, byId.get(id)); } catch { intext[id] = { paren: '', narrative: '' }; }
     }
 
     let text = [];
@@ -238,7 +337,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
         maxOffset: params.maxoffset || 0,
       },
       entries: [
-        ...ids.map((id, i) => fixLegal(style, clean, { id, html: (html[i] || '').trim(), text: decode((text[i] || '').trim()), intext: intext[id] })),
+        ...ids.map((id, i) => fixLegal(style, clean, polish(style, byId.get(id), { id, html: (html[i] || '').trim(), text: decode((text[i] || '').trim()), intext: intext[id] }))),
         ...outside.map(id => fixLegal(style, clean, { id, html: '', text: '', intext: intext[id], inBibliography: false })),
       ],
     };
@@ -267,14 +366,48 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     return out;
   }
 
-  async function intextOne({ item, style: styleName = 'apa', lang, locator, label = 'page' }) {
+  // Finishing touches citeproc can't do from the style file alone
+  const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function polish(style, item, entry) {
+    if (!item) return entry;
+    let { html, text } = entry;
+    // Never show the user a processor error: fall back to the bare essentials
+    if (/CSL STYLE ERROR/.test(html) || /CSL STYLE ERROR/.test(text)) {
+      const t = item.title || 'Untitled source';
+      text = `${t}.${item.URL ? ` ${item.URL}` : ''}`;
+      html = `<div class="csl-entry"><i>${esc(t)}</i>.${item.URL ? ` ${esc(item.URL)}` : ''}</div>`;
+    }
+    // MLA 9 (5.96): URLs without http:// or https:// (DOIs keep https://doi.org/)
+    if (/^modern-language/.test(style.name)) {
+      const strip = s => s.replace(/\bhttps?:\/\/(?!(?:dx\.)?doi\.org\/)/g, '');
+      html = strip(html); text = strip(text);
+    }
+    // Cite Them Right: an article number goes where the pages would ("PLoS ONE, 14(1), e0209899"),
+    // and an article with one is not a preprint
+    if (/cite-them-right/.test(style.name) && item.type === 'article-journal' && item.number && !item.page) {
+      const loc = item.volume ? `${item.volume}${item.issue ? `(${item.issue})` : ''}` : item.issue ? `(${item.issue})` : '';
+      const fix = s => { s = s.replace(' [Preprint]', ''); return loc && s.includes(`${loc}.`) ? s.replace(`${loc}.`, `${loc}, ${item.number}.`) : s; };
+      html = fix(html); text = fix(text);
+    }
+    // APA 7 dates a Wikipedia entry by the version cited: (2019, December 4)
+    if (/^apa/.test(style.name) && /^wikipedia$/i.test(item['container-title'] || '') && item.type === 'entry-encyclopedia') {
+      const [y, m, d] = item.issued?.['date-parts']?.[0] || [];
+      if (y && m && d) { const full = `(${y}, ${MONTH_NAMES[m - 1]} ${d})`; html = html.replace(`(${y})`, full); text = text.replace(`(${y})`, full); }
+    }
+    return { ...entry, html, text };
+  }
+
+  async function intextOne({ item, items, style: styleName = 'apa', lang, locator, label = 'page' }) {
     const { style, lang: code } = await prepare(styleName, lang);
     const clean = sanitizeItem(styleFixes(style, { ...item, id: String(item.id) }));
-    const engine = engineFor(style, code, [clean]);
+    // Cite it among the rest of the project so "2020a", initials and [7] match the reference list
+    const others = (items || []).filter(i => String(i.id) !== clean.id).map(i => sanitizeItem(styleFixes(style, { ...i, id: String(i.id) })));
+    const all = items?.length ? (items.some(i => String(i.id) === clean.id) ? (items.map(i => String(i.id) === clean.id ? clean : others.find(o => o.id === String(i.id)))) : [...others, clean]) : [clean];
+    const engine = engineFor(style, code, all);
     engine.setOutputFormat('html');
     const cite = { id: clean.id };
     if (locator) { cite.locator = String(locator); cite.label = label; }
-    const r = fixLegal(style, [clean], { id: clean.id, intext: inText(engine, style, cite) }, locator);
+    const r = fixLegal(style, [clean], { id: clean.id, intext: inText(engine, style, cite, clean) }, locator);
     return { paren: cleanPin(r.intext.paren), narrative: cleanPin(r.intext.narrative), isNote: style.isNote };
   }
 
@@ -341,7 +474,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
         const ids = (params.entry_ids || []).map(x => String(x[0] ?? x)).filter(id => !skipped.has(id));
         engine.setOutputFormat('text');
         const text = engine.makeBibliography()?.[1] || [];
-        entries = ids.map((id, k) => fixLegal(style, clean, { id, html: (html[k] || '').trim(), text: decode((text[k] || '').trim()), intext: { paren: '', narrative: '' } }));
+        entries = ids.map((id, k) => fixLegal(style, clean, polish(style, holder.map.get(id), { id, html: (html[k] || '').trim(), text: decode((text[k] || '').trim()), intext: { paren: '', narrative: '' } })));
       }
     }
     return { style: { name: style.name, title: style.title, isNote: style.isNote }, citations: formatted, entries };

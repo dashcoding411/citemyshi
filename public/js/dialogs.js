@@ -185,7 +185,7 @@ export function openInText(item) {
         locator = `[${locator.replace(/^\[|\]$/g, '')}]`;
         label = 'page';
       }
-      const r = await formatInText({ item, style: p.style, lang: p.lang, locator, label });
+      const r = await formatInText({ item, items: p.items, style: p.style, lang: p.lang, locator, label });
       if (isAct && locator) { r.paren = r.paren.replace(/\bpp?\.\s*/, ''); r.narrative = r.narrative.replace(/\bpp?\.\s*/, ''); }
       if (isCase && /^\[/.test(locator)) { r.paren = r.paren.replace(/\bpp?\.\s*(?=\[)/, ''); r.narrative = r.narrative.replace(/\bpp?\.\s*(?=\[)/, ''); }
       if (timestamp && $('#loc', m.el).value.trim()) {

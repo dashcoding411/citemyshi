@@ -10,12 +10,12 @@ const CASES = {
     journal: ['LeCun, Y., Bengio, Y., & Hinton, G. (2015). Deep learning. Nature, 521(7553), 436–444. https://doi.org/10.1038/nature14539', '(LeCun et al., 2015)', 'LeCun et al. (2015)'],
     book: ['Austen, J. (2003). Pride and prejudice. Penguin Books.', '(Austen, 2003)', 'Austen (2003)'],
     web: ['Gunnars, K. (2023, May 12). How green tea can help you lose weight. Healthline. https://www.healthline.com/nutrition/green-tea-and-weight-loss', '(Gunnars, 2023)'],
-    two: ['Ladds, M., & Keating, A. (2017). How much do disasters cost? A comparison of disaster cost estimates in Australia. International Journal of Disaster Risk Reduction, 21, 419–429. https://doi.org/10.1016/j.ijdrr.2017.01.004', '(Ladds & Keating, 2017)', 'Ladds & Keating (2017)'],
+    two: ['Ladds, M., & Keating, A. (2017). How much do disasters cost? A comparison of disaster cost estimates in Australia. International Journal of Disaster Risk Reduction, 21, 419–429. https://doi.org/10.1016/j.ijdrr.2017.01.004', '(Ladds & Keating, 2017)', 'Ladds and Keating (2017)'],
   },
   'modern-language-association': {
     journal: ['LeCun, Yann, et al. “Deep Learning.” Nature, vol. 521, no. 7553, May 2015, pp. 436–44, https://doi.org/10.1038/nature14539.', '(LeCun et al.)'],
     book: ['Austen, Jane. Pride and Prejudice. Penguin Books, 2003.', '(Austen)'],
-    web: ['Gunnars, Kris. “How Green Tea Can Help You Lose Weight.” Healthline, 12 May 2023, https://www.healthline.com/nutrition/green-tea-and-weight-loss.'],
+    web: ['Gunnars, Kris. “How Green Tea Can Help You Lose Weight.” Healthline, 12 May 2023, www.healthline.com/nutrition/green-tea-and-weight-loss.'],
   },
   'chicago-author-date': {
     journal: ['LeCun, Yann, Yoshua Bengio, and Geoffrey Hinton. 2015. “Deep Learning.” Nature 521 (7553): 436–44. https://doi.org/10.1038/nature14539.', '(LeCun et al. 2015)'],
@@ -32,7 +32,7 @@ const CASES = {
   'australian-guide-to-legal-citation': {
     journal: ['LeCun, Yann, Yoshua Bengio and Geoffrey Hinton, ‘Deep Learning’ (2015) 521(7553) Nature 436'],
     book: ['Austen, Jane, Pride and Prejudice (Penguin Books, 2003)', 'Jane Austen, Pride and Prejudice (Penguin Books, 2003).'],
-    web: ['Gunnars, Kris, ‘How Green Tea Can Help You Lose Weight’, Healthline (12 May 2023) <https://www.healthline.com/nutrition/green-tea-and-weight-loss>'],
+    web: ['Gunnars, Kris, ‘How Green Tea Can Help You Lose Weight’, Healthline (Web Page, 12 May 2023) <https://www.healthline.com/nutrition/green-tea-and-weight-loss>'],
   },
   ieee: {
     journal: ['[1] Y. LeCun, Y. Bengio, and G. Hinton, “Deep learning,” Nature, vol. 521, no. 7553, pp. 436–444, May 2015, doi: 10.1038/nature14539.', '[1]'],

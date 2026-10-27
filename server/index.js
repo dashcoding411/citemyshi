@@ -6,7 +6,8 @@ import { citeUrl } from './extract.js';
 import { detectInput, lookupDoi, lookupIsbn, lookupPmid, lookupArxiv, search, findByTitle } from './lookup.js';
 import { searchStyles, loadStyle, bibliographyHeading, LANGUAGES } from './styles.js';
 import { toDocx, toFormat, parseImport } from './export.js';
-import { normalizeTitleCase, toSentenceCase } from './casing.js';
+import { toSentenceCase } from './casing.js';
+import { tidyItem } from './tidy.js';
 import { parseLegalCitation } from './legal.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -89,9 +90,9 @@ app.get('/api/cite', wrap(async req => {
   const r = await cached(key, d.kind === 'search' ? 3600_000 : 6 * 3600_000, async () => {
     const out = await resolve(d, kind);
     // Store titles in sentence case (the CSL convention): APA etc. print them as-is,
-    // MLA/Chicago capitalise them automatically
-    if (out.item) out.item = normalizeTitleCase(out.item);
-    if (out.results) out.results = out.results.map(x => ({ ...x, item: normalizeTitleCase(x.item) }));
+    // MLA/Chicago capitalise them automatically. Then fix what databases get wrong.
+    if (out.item) out.item = tidyItem(out.item);
+    if (out.results) out.results = out.results.map(x => ({ ...x, item: tidyItem(x.item) }));
     return out;
   });
   // Fresh "accessed" date even when served from cache
@@ -126,7 +127,7 @@ app.get('/api/match-title', wrap(async req => {
   const title = String(req.query.title || '').trim().slice(0, 400);
   if (title.length < 10) return { item: null };
   const item = await cached(`title|${title.toLowerCase()}`, 6 * 3600_000, () => findByTitle(title).catch(() => null));
-  return { item: item ? normalizeTitleCase(item) : null, source: item ? 'DOI' : null };
+  return { item: item ? tidyItem(item) : null, source: item ? 'DOI' : null };
 }));
 
 app.post('/api/sentence-case', wrap(async req => ({ text: toSentenceCase(String(req.body?.text || '').slice(0, 2000)) })));
