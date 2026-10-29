@@ -49,6 +49,7 @@ The style catalog, bundled styles and languages are already in the repo. Run `np
 
 **Writing your essay**
 - **Saved quotes** on each source with page/paragraph numbers, copied already cited in your style (block quotes for long ones).
+- **The Cite button** (a bookmark): cites the page you're looking at, read in your own browser — works on sites that block citation tools (NYT, Mayo Clinic, Medium…) and on journal pages behind your uni login.
 - **Drop a PDF** onto the cite box: it's read in your browser (never uploaded) and matched by DOI, arXiv ID, ISBN or title.
 - **Footnote planner**: list your citations in essay order and get every footnote right — Ibid, (n 3), short forms — or IEEE/Vancouver numbering by first citation.
 - **Word and Google Docs add-ins** (see `/addins.html`): insert citations and footnotes, renumber everything with Update citations, insert the bibliography. They read a project through a private 12-character connection code.

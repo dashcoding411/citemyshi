@@ -58,3 +58,18 @@ test('AustLII titles: the reported citation, without the nickname', () => {
   assert.equal(item.volume, '175');
   assert.equal(item['container-title-short'], 'CLR');
 });
+
+test('the date beside the heading, not the dates of related news above it', () => {
+  const { item } = extractFromHtml(page('<title>Climate change</title>',
+    '<aside><div class="date"><span class="timestamp">23 October 2026</span> News release</div></aside><div class="header"><h1>Climate change</h1><span class="timestamp">12 October 2023</span></div>'), 'https://www.who.int/news-room/fact-sheets/detail/climate-change-and-health');
+  assert.deepEqual(item.issued, { 'date-parts': [[2023, 10, 12]] });
+});
+
+test('a page read by the Cite button: the browser copy is used instead of fetching', async () => {
+  const { citeUrl } = await import('../server/extract.js');
+  const html = page('<title>Diabetes - Symptoms and causes - Mayo Clinic</title><meta property="og:site_name" content="Mayo Clinic"><meta name="author" content="Mayo Clinic Staff"><meta property="article:published_time" content="2026-01-21">');
+  const r = await citeUrl('https://www.mayoclinic.org/diseases-conditions/diabetes/symptoms-causes/syc-20371444', { html });
+  assert.equal(r.source, 'Webpage');
+  assert.equal(r.item.title, 'Diabetes - Symptoms and causes');
+  assert.deepEqual(r.item.issued, { 'date-parts': [[2026, 1, 21]] });
+});

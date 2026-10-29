@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { SOURCE_TYPES, FIELD_DEFS, ROLES, ROLE_KEYS, sourceTypeFor, missingInfo, tipsFor } from './types.js';
 import { state, active, project, addItems, replaceItem, removeItems, findDuplicate, allTags } from './store.js';
 import { formatBibliography } from './formatter.js';
+import { openCiteButton } from './citebutton.js';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -62,7 +63,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
     const extras = [...t.extra, ...extraWithValues];
 
     m.body.innerHTML = `
-      ${source ? `<div class="notice ${warnings.length ? 'warn' : 'ok'}">${icon(warnings.length ? 'alert' : 'sparkles')}<div>${warnings.length ? warnings.map(esc).join('<br>') : `We found this ${source === 'URL' ? 'from the link' : `using <b>${esc(source)}</b>`}. Give it a quick check below.`}</div></div>` : ''}
+      ${source ? `<div class="notice ${warnings.length ? 'warn' : 'ok'}">${icon(warnings.length ? 'alert' : 'sparkles')}<div>${warnings.length ? warnings.map(esc).join('<br>') : `We found this ${source === 'URL' ? 'from the link' : `using <b>${esc(source)}</b>`}. Give it a quick check below.`}${source === 'URL' || source === 'Web archive' ? `<br><button class="link" data-open-cite-button style="margin-top:6px">${icon('quote')} Get the exact details with the Cite button</button> — it reads the page in your own browser.` : ''}</div></div>` : ''}
       <div class="preview-box">
         <div class="lbl"><span>Preview · ${esc(p.styleTitle || p.style)}</span><span class="pv-status"></span></div>
         <div class="csl pv-html ${state.serif ? 'serif' : ''}"><span style="color:var(--muted)">Generating…</span></div>
@@ -178,6 +179,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
   function bind() {
     const b = m.body;
     $$('[data-case]', b).forEach(el => el.onclick = e => { e.preventDefault(); applyCase(el.dataset.case); });
+    $$('[data-open-cite-button]', b).forEach(el => el.onclick = e => { e.preventDefault(); openCiteButton(); });
     $('#ed-type', b).onchange = e => {
       const nt = SOURCE_TYPES.find(s => s.id === e.target.value);
       const old = sourceTypeFor(w);

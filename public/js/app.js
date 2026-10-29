@@ -11,6 +11,7 @@ import { DEGREES } from './degrees.js';
 import { quotesHtml, openQuoteForm, deleteQuote, copyQuote, quotesExport } from './quotes.js';
 import { readPdf } from './pdf.js';
 import { openPlanner } from './planner.js';
+import { listenForPage, openCiteButton } from './citebutton.js';
 
 let cloudMod = null; // optional Firebase sync, loaded lazily so the app works offline
 
@@ -441,6 +442,7 @@ function renderCiteCard() {
         <button class="link" data-pdf>${icon('doc')} Cite a PDF</button>
         <button class="link" data-manual>${icon('pencil')} Cite manually</button>
         <button class="link" data-import>${icon('upload')} Import</button>
+        <button class="link" data-cite-button title="Cite any page you can open — even ones that block citation tools">${icon('quote')} Cite button</button>
       </span>
     </div>
     <div id="citeResults">${renderResults()}</div>`;
@@ -610,6 +612,7 @@ function wireCiteCard() {
       return;
     }
     if (e.target.closest('[data-import]')) return openImport();
+    if (e.target.closest('[data-cite-button]')) return openCiteButton();
     if (e.target.closest('[data-pdf]')) {
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'application/pdf,.pdf'; inp.multiple = true;
@@ -1157,6 +1160,16 @@ import('./cloud.js').then(m => {
   });
   renderSidebar();
 }).catch(e => console.warn('Cloud sync unavailable:', e.message));
+
+// Opened by the Cite button on another page
+listenForPage(async page => {
+  const busy = toast('Reading the page you were on…', { duration: 30000 });
+  try {
+    const r = await api('/api/cite-page', { body: page });
+    busy?.();
+    openEditor({ item: r.item, isNew: true, source: r.source, warnings: r.warnings || [], onSaved: afterAdd });
+  } catch (e) { busy?.(); toast(e.message || 'Couldn’t read that page', { error: true }); }
+});
 
 warmUp();
 renderSidebar();

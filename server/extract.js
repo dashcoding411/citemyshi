@@ -277,7 +277,10 @@ function aglsValue(v) {
 const DATE_LABEL = /(page last (?:reviewed|updated)|last (?:updated|reviewed|modified|revised)|reviewed on|updated on|date (?:published|updated)|published on|first published|published|updated|posted on)\s*:?\s*((?:\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\.?,?\s+\d{4})|(?:[A-Za-z]{3,9}\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})|(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4})|(?:\d{4}-\d{2}-\d{2}))/gi;
 function visibleDates($, dayFirst) {
   const out = { updated: null, published: null };
-  const text = $('main').text() || $('article').text() || $('body').text();
+  // The heading's block (byline, "Updated on…") then the main text
+  let box = $('h1').first();
+  for (let up = 0; up < 4 && box.parent().length && box.parent()[0].name !== 'body'; up++) box = box.parent();
+  const text = `${box.length ? box.text() : ''} ${$('main').text() || $('article').text() || $('body').text()}`;
   // Only the top of the page: the byline area, not "updated" dates in related-article lists
   for (const m of String(text).replace(/\s+/g, ' ').slice(0, 6000).matchAll(DATE_LABEL)) {
     const d = parseDate(m[2], { dayFirst });
@@ -285,11 +288,19 @@ function visibleDates($, dayFirst) {
     if (/review|updat|modif|revis/i.test(m[1])) out.updated ||= d; else out.published ||= d;
   }
   if (!out.published) {
-    for (const sel of ['.timestamp', '.date-published', '.published-date', '.publish-date', '.article-date', '.post-date', '.entry-date', '.pubdate', 'header .date', '.article-meta .date']) {
-      const t = cleanText($(sel).first().text());
-      const d = t && t.length < 40 ? parseDate(t, { dayFirst }) : null;
-      if (d && d['date-parts'][0].length === 3) { out.published = d; break; }
-    }
+    const SEL = '.timestamp, .date-published, .published-date, .publish-date, .article-date, .post-date, .entry-date, .pubdate, header .date, .article-meta .date';
+    const firstDate = els => {
+      for (const el of els.toArray()) {
+        const t = cleanText($(el).text());
+        const d = t && t.length < 40 ? parseDate(t, { dayFirst }) : null;
+        if (d && d['date-parts'][0].length === 3) return d;
+      }
+      return null;
+    };
+    // The date beside the page's own heading, not those of "related news" further up or down
+    let scope = $('h1').first();
+    for (let up = 0; up < 4 && scope.length && !out.published; up++) { scope = scope.parent(); out.published = firstDate(scope.find(SEL)); }
+    out.published ||= firstDate($(SEL));
   }
   return out;
 }
@@ -733,12 +744,20 @@ function fromUrlOnly(url) {
 
 // When a site turns automated readers away (or the page has gone), read the
 // copy the Internet Archive keeps instead — the citation metadata is the same.
+// The Archive limits how often one address may ask; when it says "too many
+// requests", stop asking for a while instead of making every citation wait.
+let archiveRestUntil = 0;
 async function archivedHtml(url) {
+  if (Date.now() < archiveRestUntil) throw new Error('archive busy (waiting before asking again)');
   // Asking for today's date redirects to the closest snapshot; "id_" means the page exactly as archived
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   let res = await safeFetch(`https://web.archive.org/web/${stamp}id_/${cleanUrl(url)}`, { headers: PAGE_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(9000) });
   // The newest copy may itself be the site's "blocked" page; an older one usually isn't
-  if (res.status === 403 || res.status === 429 || res.status === 503) res = await safeFetch(`https://web.archive.org/web/2023id_/${cleanUrl(url)}`, { headers: PAGE_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(6000) });
+  if (res.status === 403 || res.status === 503) res = await safeFetch(`https://web.archive.org/web/2023id_/${cleanUrl(url)}`, { headers: PAGE_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(6000) });
+  if (res.status === 429) {
+    const wait = Math.min(Math.max(+res.headers.get('retry-after') || 0, 300), 3600);
+    archiveRestUntil = Date.now() + wait * 1000;
+  }
   if (!res.ok) throw new Error(`archive HTTP ${res.status}`);
   if (/pdf/i.test(res.headers.get('content-type') || '')) throw new Error('archive copy is a PDF');
   let buf = Buffer.from(await res.arrayBuffer());
@@ -802,7 +821,9 @@ async function viaTranslationServer(url) {
 
 const isWeak = item => !item?.author?.length && !item?.issued;
 
-export async function citeUrl(inputUrl) {
+// `html`: the page as the student's own browser shows it (from the "Cite this
+// page" button) — used instead of fetching, so blocked and paywalled sites work.
+export async function citeUrl(inputUrl, { html: givenHtml } = {}) {
   const url = inputUrl.trim();
   const host = hostOf(url);
   const warnings = [];
@@ -811,8 +832,8 @@ export async function citeUrl(inputUrl) {
   // Legislation sites, AustLII, JADE: the page title (when we can read it)
   // plus what the link itself says
   if (isLegalHost(host)) {
-    let title = '';
-    try { const page = await fetchPage(url); if (page.kind === 'html') title = cheerio.load(page.html)('title').first().text(); } catch {}
+    let title = givenHtml ? cheerio.load(givenHtml)('title').first().text() : '';
+    if (!title) try { const page = await fetchPage(url); if (page.kind === 'html') title = cheerio.load(page.html)('title').first().text(); } catch {}
     if (!legalFromPage(url, title)?.title) {
       try { const html = await within(archivedHtml(url), 14000); title = cheerio.load(html)('title').first().text() || title; } catch {}
     }
@@ -847,7 +868,7 @@ export async function citeUrl(inputUrl) {
   const urlDoi = (host === 'nature.com' && (url.match(/\/articles\/([a-z0-9.-]+)/i) || [])[1] && `10.1038/${url.match(/\/articles\/([a-z0-9.-]+)/i)[1]}`) || (decodeURIComponent(url).match(/\/(?:doi|abs|full|pdf|epdf|article|chapter|book)\/(?:abs\/|full\/|pdf\/|epdf\/)?(10\.\d{4,9}\/[^?#\s]+?)(?:\.pdf)?(?:[?#]|$)/) || decodeURIComponent(url).match(/[?&]doi=(10\.\d{4,9}\/[^&#\s]+)/) || [])[1];
 
   let page;
-  try { page = await fetchPage(url); }
+  try { page = givenHtml ? { kind: 'html', html: givenHtml, finalUrl: url, status: 200 } : await fetchPage(url); }
   catch (e) {
     if (urlDoi) { try { return { item: mergeScholarly({ URL: cleanUrl(url) }, await lookupDoi(urlDoi)), source: 'DOI' }; } catch {} }
     const ts = await viaTranslationServer(url);

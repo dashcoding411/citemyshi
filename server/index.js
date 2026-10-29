@@ -59,6 +59,7 @@ app.use('/api/cite', rateLimit(90, 60_000)); // includes search-as-you-type
 app.use('/api/export', rateLimit(60, 60_000));
 app.use('/api/import', rateLimit(20, 60_000));
 app.use('/api/match-title', rateLimit(30, 60_000));
+app.use('/api/cite-page', rateLimit(30, 60_000));
 app.get('/healthz', (req, res) => res.send('ok'));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.text({ limit: '5mb', type: 'text/*' }));
@@ -130,6 +131,22 @@ app.get('/api/match-title', wrap(async req => {
   if (title.length < 10) return { item: null };
   const item = await cached(`title|${title.toLowerCase()}`, 6 * 3600_000, () => findByTitle(title).catch(() => null));
   return { item: item ? tidyItem(item) : null, source: item ? 'DOI' : null };
+}));
+
+// The "Cite this page" button: the page's HTML as the student's browser shows it
+app.post('/api/cite-page', wrap(async req => {
+  const url = String(req.body?.url || '').trim();
+  const html = String(req.body?.html || '');
+  if (!/^https?:\/\//i.test(url) || url.length > 2000) throw Object.assign(new Error('That page’s address wasn’t sent'), { status: 400 });
+  if (!html || html.length > 1_000_000) throw Object.assign(new Error('That page was too large to read'), { status: 400 });
+  // Pressed while the site was still showing a "checking your browser" screen
+  const hasDetails = /property="og:title"|name="citation_title"|application\/ld\+json|<h1[\s>]/i.test(html);
+  const pageTitle = (html.match(/<title>([^<]*)/i) || [])[1]?.trim().toLowerCase() || '';
+  if (!hasDetails && (!pageTitle || pageTitle === new URL(url).hostname.replace(/^www\./, '') || /captcha|datadome|px-captcha|cf-chl|challenge-platform|Just a moment|Verifying you are human/i.test(html))) {
+    throw Object.assign(new Error('That page was still showing a security check. Let it finish loading, then press the Cite button again.'), { status: 422 });
+  }
+  const { trace, ...r } = await citeUrl(url, { html });
+  return { mode: 'item', ...r, item: tidyItem(r.item) };
 }));
 
 app.post('/api/sentence-case', wrap(async req => ({ text: toSentenceCase(String(req.body?.text || '').slice(0, 2000)) })));
