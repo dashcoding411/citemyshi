@@ -40,7 +40,7 @@ const newCode = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b =
 export const formatCode = c => c.replace(/(.{4})(?=.)/g, '$1-');
 
 export async function connectProject(project) {
-  if (!cloud.user) throw new Error('Sign in first so your project can be shared with Word / Google Docs securely.');
+  if (!cloud.user) throw new Error('Sign in first.');
   if (!project.linkCode) { project.linkCode = newCode(); project.updatedAt = Date.now(); S.emit({ projects: true }); }
   await pushNow();
   return project.linkCode;
@@ -63,11 +63,11 @@ export function friendlyError(e) {
   const code = e?.code || '';
   if (code === 'auth/configuration-not-found' || code === 'auth/operation-not-allowed') return 'Google sign-in isn’t enabled yet. In the Firebase console: Authentication → Get started → Sign-in method → Google → Enable.';
   if (code === 'auth/unauthorized-domain') return `This address isn’t allowed to sign in. Firebase console → Authentication → Settings → Authorized domains → add ${location.hostname}.`;
-  if (code === 'auth/popup-blocked') return 'Your browser blocked the sign-in pop-up. Allow pop-ups for this site and try again.';
+  if (code === 'auth/popup-blocked') return 'Allow pop-ups to sign in.';
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
-  if (/has not been used|database .*does not exist|NOT_FOUND/i.test(e?.message || '') || code === 'not-found') return 'Cloud sync isn’t available right now — your projects are still saved on this device.';
-  if (code === 'permission-denied' || /PERMISSION_DENIED/i.test(e?.message || '')) return 'Sync was refused — try signing out and back in. Your projects are still saved on this device.';
-  if (code === 'unavailable') return 'You’re offline — changes will sync when you reconnect.';
+  if (/has not been used|database .*does not exist|NOT_FOUND/i.test(e?.message || '') || code === 'not-found') return 'Sync isn’t available. Your projects are saved on this device.';
+  if (code === 'permission-denied' || /PERMISSION_DENIED/i.test(e?.message || '')) return 'Sync failed. Try signing out and in again.';
+  if (code === 'unavailable') return 'Offline. Changes will sync later.';
   return e?.message || 'Something went wrong with sync';
 }
 
@@ -94,7 +94,7 @@ async function pushNow() {
     if (p.shared) continue; // group projects live in shared/{id}, synced below
     const json = JSON.stringify(p);
     if (pushedProjects.get(p.id) === json) continue;
-    if (json.length > 950_000) { setStatus('error', `“${p.name}” is too big to sync — split it into smaller projects.`); continue; }
+    if (json.length > 950_000) { setStatus('error', `“${p.name}” is too big to sync. Split it up.`); continue; }
     batch.set(doc(db, 'users', user.uid, 'projects', p.id), { data: json, updatedAt: p.updatedAt || Date.now() });
     pending.push([p.id, json]); n++;
   }
@@ -135,9 +135,9 @@ function watchShared(sid) {
   const uid = cloud.user.uid;
   sharedSubs.set(sid, onSnapshot(doc(db, 'shared', sid), snap => {
     if (snap.metadata.hasPendingWrites) return;
-    if (!snap.exists()) { endShared(sid, true, 'The owner stopped sharing a group project — you’ve kept your own copy.'); return; }
+    if (!snap.exists()) { endShared(sid, true, 'A group project was unshared. You kept a copy.'); return; }
     const d = snap.data();
-    if (!d.members?.[uid]) { endShared(sid, true, 'You were removed from a group project — you’ve kept your own copy.'); return; }
+    if (!d.members?.[uid]) { endShared(sid, true, 'You were removed from a group project. You kept a copy.'); return; }
     if (d.data === lastShared.get(sid)) {
       // membership may still have changed
       const p = state.projects.find(x => x.shared?.id === sid);
@@ -148,7 +148,7 @@ function watchShared(sid) {
     S.applyRemoteShared(sid, JSON.parse(d.data), infoFrom(d, uid));
   }, e => {
     // Lost access (removed, or the project was deleted)
-    if (e.code === 'permission-denied') endShared(sid, true, 'You no longer have access to a group project — you’ve kept your own copy.');
+    if (e.code === 'permission-denied') endShared(sid, true, 'You lost access to a group project. You kept a copy.');
   }));
 }
 
@@ -177,7 +177,7 @@ async function pushShared() {
         if (!snap.exists()) throw Object.assign(new Error('gone'), { code: 'not-found' });
         const m = S.mergeShared(S.sharedPayload(p), JSON.parse(snap.data().data));
         const json = JSON.stringify(m);
-        if (json.length > 950_000) throw new Error(`“${p.name}” is too big to sync — split it into smaller projects.`);
+        if (json.length > 950_000) throw new Error(`“${p.name}” is too big to sync. Split it up.`);
         if (json !== snap.data().data) t.update(doc(db, 'shared', sid), { data: json, updatedAt: Date.now() });
         return { m, json };
       });
@@ -188,7 +188,7 @@ async function pushShared() {
       if (JSON.stringify(S.sharedPayload(p)) !== before) S.emit({ projects: true, project: p.id === state.activeId, format: p.id === state.activeId, remote: true });
       if (JSON.stringify(S.sharedPayload(p)) !== lastShared.get(sid)) push(); // still ahead of the cloud: save again
     } catch (e) {
-      if (e.code === 'not-found' || e.code === 'permission-denied') endShared(sid, true, 'You no longer have access to a group project — you’ve kept your own copy.');
+      if (e.code === 'not-found' || e.code === 'permission-denied') endShared(sid, true, 'You lost access to a group project. You kept a copy.');
       else {
         // Usually someone else saved at the same moment: try again shortly so nothing is lost
         sharedRetry = Math.min((sharedRetry || 1000) * 2, 30000);
@@ -220,13 +220,13 @@ export async function shareProject(p) {
 
 export async function joinShared(sid) {
   if (!cloud.user) throw new Error('Sign in to join the group project.');
-  if (!/^[a-z0-9]{20}$/.test(sid)) throw new Error('That join link isn’t complete — ask for it again.');
+  if (!/^[a-z0-9]{20}$/.test(sid)) throw new Error('That join link is incomplete.');
   const uid = cloud.user.uid;
   const ref = doc(db, 'shared', sid);
   let snap = await getDoc(ref).catch(() => null);
   if (!snap?.exists()) {
     try { await updateDoc(ref, { [`members.${uid}`]: { role: 'editor', name: myName() } }); }
-    catch (e) { throw new Error(e.code === 'not-found' ? 'That group project no longer exists.' : 'Couldn’t join — the link may have been turned off. Ask for a new one.'); }
+    catch (e) { throw new Error(e.code === 'not-found' ? 'That group project no longer exists.' : 'Couldn’t join. Ask for a new link.'); }
     snap = await getDoc(ref);
   }
   const d = snap.data();

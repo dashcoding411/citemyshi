@@ -30,6 +30,8 @@ export const FIELD_DEFS = {
   'event-place': { label: 'Event location' },
   authority: { label: 'Court / authority' },
   version: { label: 'Version' },
+  _prompt: { label: 'Your prompt (for MLA)', kind: 'textarea', wide: true },
+  _receiver: { label: 'Your name (for Harvard)' },
   archive: { label: 'Archive / database' },
   archive_location: { label: 'Archive location' },
   'archive-place': { label: 'Archive / museum location', placeholder: 'e.g. New York' },
@@ -52,6 +54,8 @@ export const SOURCE_TYPES = [
   { id: 'film', label: 'Film / movie', icon: 'film', csl: 'motion_picture', preset: { genre: 'Film' }, fields: ['title', 'publisher', 'issued', 'genre', 'dimensions', 'URL'], important: ['title', 'issued', 'publisher'], labels: { publisher: 'Production company', genre: 'Description (e.g. Film, Documentary)' } },
   { id: 'tv', label: 'TV / radio episode', icon: 'film', csl: 'broadcast', preset: { medium: 'TV series episode' }, container: 'Series title', fields: ['title', 'container-title', 'number', 'publisher', 'issued', 'medium', 'URL'], important: ['title', 'container-title', 'issued'], labels: { number: 'Season and episode (e.g. Season 4, Episode 5)', publisher: 'Network / broadcaster', medium: 'Description' } },
   { id: 'podcast', label: 'Podcast episode', icon: 'mic', csl: 'broadcast', preset: { medium: 'Audio podcast episode' }, container: 'Podcast name', fields: ['title', 'container-title', 'number', 'publisher', 'issued', 'dimensions', 'URL'], important: ['title', 'container-title', 'issued', 'URL'], labels: { number: 'Episode number', publisher: 'Production company / network' } },
+  { id: 'ai', label: 'AI chat (ChatGPT, Copilot…)', icon: 'chat', csl: 'webpage', genre: 'Generative AI chat', container: 'AI tool or model', fields: ['title', 'container-title', 'version', 'issued', 'URL', '_prompt', '_receiver'], important: ['title', 'container-title', 'issued', 'author'],
+    labels: { title: 'Chat title', 'container-title': 'Tool or model (e.g. ChatGPT, Copilot, Gemini)', version: 'Version or model (e.g. GPT-5)', issued: 'Date of the chat', URL: 'Share link to the chat' } },
   { id: 'blog', label: 'Blog post', icon: 'pen', csl: 'post-weblog', container: 'Blog name', fields: ['title', 'container-title', 'issued', 'URL', 'accessed'], important: ['title', 'container-title', 'URL', 'issued', 'author'] },
   { id: 'social', label: 'Social media post', icon: 'chat', csl: 'post', container: 'Platform', fields: ['title', 'container-title', 'issued', 'URL', 'accessed'], important: ['title', 'URL', 'issued', 'author'] },
   { id: 'encyclopedia', label: 'Encyclopedia entry', icon: 'book', csl: 'entry-encyclopedia', container: 'Encyclopedia', fields: ['title', 'container-title', 'edition', 'publisher', 'issued', 'URL', 'accessed'], important: ['title', 'container-title'] },
@@ -85,8 +89,8 @@ export const CITE_TABS = [
   { id: 'book', label: 'Book', placeholder: 'Search by title, author, or ISBN', kind: 'book' },
   { id: 'journal', label: 'Journal', placeholder: 'Search by title, author, or paste a DOI', kind: 'journal' },
   { id: 'video', label: 'Video', placeholder: 'Paste a YouTube, Vimeo or TED link', kind: 'video' },
-  { id: 'law', label: 'Law', placeholder: 'e.g. Corporations Act 2001 (Cth) · Mabo v Queensland (No 2) [1992] HCA 23 · an AustLII link', kind: 'all' },
-  { id: 'all', label: 'Search all', placeholder: 'Search books & articles, or paste a URL, DOI, ISBN, PMID, arXiv ID…', kind: 'all' },
+  { id: 'law', label: 'Law', placeholder: 'e.g. Corporations Act 2001 (Cth), or an AustLII link', kind: 'all' },
+  { id: 'all', label: 'Search all', placeholder: 'Search, or paste a link, DOI or ISBN', kind: 'all' },
 ];
 
 export const ROLES = [
@@ -99,6 +103,7 @@ export const ROLE_KEYS = ROLES.map(r => r[0]);
 
 export function sourceTypeFor(item) {
   if (item.type === 'webpage' && /video/i.test(item.genre || '')) return SOURCE_TYPES.find(t => t.id === 'video');
+  if (/generative ai|large language model/i.test(item.genre || '')) return SOURCE_TYPES.find(t => t.id === 'ai');
   if (item.type === 'broadcast') return SOURCE_TYPES.find(t => t.id === (/podcast/i.test(`${item.genre || ''} ${item.medium || ''}`) ? 'podcast' : 'tv'));
   if (item.type === 'bill') return SOURCE_TYPES.find(t => t.id === 'bill');
   return SOURCE_TYPES.find(t => t.csl === item.type && !t.genre) || SOURCE_TYPES.find(t => t.csl === item.type) || SOURCE_TYPES.find(t => t.id === 'document');
@@ -123,52 +128,41 @@ const TEXTBOOK_PUBLISHERS = /pearson|cengage|mcgraw|wiley|elsevier|oxford univer
 export function checkInfo(item) {
   const out = [];
   const page = String(item.page || '').trim();
-  if (['article-journal', 'article-magazine', 'chapter', 'paper-conference'].includes(item.type) && /^\d+$/.test(page) && !item.number) out.push('Only the first page is listed — add the last page (e.g. 263–291)');
-  if (item.type === 'book' && !item.edition && (TEXTBOOK_PUBLISHERS.test(item.publisher || '') || +item['number-of-pages'] >= 500)) out.push('If this isn’t the 1st edition, add the edition (it’s on the cover or copyright page)');
-  if (item.title && item.title.length > 12 && item.title === item.title.toUpperCase() && /[A-Z]{4}/.test(item.title)) out.push('The title is in capitals — retype it in normal case');
-  for (const n of item.author || []) if (n.family && !n.given && !n.literal) { out.push(`Add ${n.family}’s first name or initial`); break; }
+  if (['article-journal', 'article-magazine', 'chapter', 'paper-conference'].includes(item.type) && /^\d+$/.test(page) && !item.number) out.push('Only the first page is listed. Add the last page.');
+  if (item.type === 'book' && !item.edition && (TEXTBOOK_PUBLISHERS.test(item.publisher || '') || +item['number-of-pages'] >= 500)) out.push('Check the edition');
+  if (item.title && item.title.length > 12 && item.title === item.title.toUpperCase() && /[A-Z]{4}/.test(item.title)) out.push('Title is in capitals');
+  for (const n of item.author || []) if (n.family && !n.given && !n.literal) { out.push(`Add ${n.family}’s first name`); break; }
   return out;
 }
 
-// Short, practical advice shown in the editor for each kind of source
+// One line of advice in the editor, only where students commonly get it wrong
 const TYPE_TIPS = {
-  website: 'No named author? On an organisation’s own site (WHO, ABS, a university, a government department) the organisation is the author. Otherwise leave it blank — the title moves to the front. Use the “last updated” date if the page shows one.',
-  book: 'Only add an edition if it isn’t the first. Use the publisher’s name, not the printer’s.',
-  chapter: 'Put the chapter’s author as Author and the book’s editors as Editor (choose the role on the left).',
-  journal: 'Add the DOI if the article has one — APA, Harvard and Vancouver expect it. Volume, issue and pages matter too.',
-  newspaper: 'Online news: include the URL. Print edition: add the page number instead.',
-  magazine: 'Add volume and issue if the magazine prints them.',
-  video: 'The author is the person or channel that uploaded it.',
-  film: 'The director goes in Contributors with the role “Director”. Production company goes in Production company.',
-  tv: 'Add the writer and director as contributors. Season and episode go together, e.g. “Season 4, Episode 5”.',
-  podcast: 'The host goes in Contributors. Add the episode number if there is one.',
-  blog: 'Blog name goes in Blog name; the post title in Title.',
-  social: 'Use the first 20 or so words of the post as the title. The account name is the author.',
-  encyclopedia: 'Most online encyclopedia entries have no author — that’s fine. Add the date you accessed it.',
-  dictionary: 'The entry word is the title. Dictionaries are usually undated online — add the date you accessed it.',
-  report: 'For government and organisation reports, the agency is usually the author. Add the report number if it has one.',
-  thesis: 'Put the university in University, and the kind of thesis (e.g. Doctoral dissertation, Master’s thesis) in Description.',
-  conference: 'The proceedings title goes in Proceedings title; the conference name in Conference / event.',
-  preprint: 'Preprints aren’t peer-reviewed — cite the published version instead if there is one (try its DOI).',
-  dataset: 'Add the version and the repository or organisation that publishes it.',
-  software: 'Add the version number you used.',
-  image: 'Artwork in a gallery: add the museum. Image found online: add the website and URL.',
-  interview: 'An interview you did yourself is a personal communication: APA and Chicago cite it in-text only.',
-  letter: 'Personal emails and letters are cited in-text only in APA and Chicago — they won’t appear in the reference list.',
-  legislation: 'Name without the year (e.g. Corporations Act), the year, and the jurisdiction (Cth, NSW…). Add section pinpoints like s 9 in the footnote/in-text dialog.',
-  bill: 'Name without the year, the year, and the jurisdiction.',
-  case: 'Reported: year, volume, report abbreviation and first page — (1992) 175 CLR 1. Unreported: year, court and number — [1992] HCA 23. Paragraph pinpoints go in the footnote dialog.',
-  manuscript: 'Add the archive or library that holds it, and its reference number.',
+  website: 'No person named? Use the organisation as author. Use the “last updated” date if there is one.',
+  book: 'Only add an edition if it isn’t the first.',
+  chapter: 'Chapter author as Author, book editors as Editor.',
+  journal: 'Add the DOI if there is one.',
+  newspaper: 'Print edition: add the page number.',
+  video: 'The author is the channel that uploaded it.',
+  film: 'Add the director (role: Director).',
+  tv: 'Season and episode, e.g. Season 4, Episode 5.',
+  podcast: 'Add the host (role: Host).',
+  ai: 'Author is the company. APA uses the chat title, MLA the prompt, Harvard your name. Check your unit’s AI rules.',
+  social: 'Title: the first 20 words of the post.',
+  report: 'Add the report number if it has one.',
+  preprint: 'If it has since been published, cite that version.',
+  software: 'Add the version you used.',
+  image: 'Add the museum or gallery.',
+  interview: 'Your own interview: APA and Chicago cite it in-text only.',
+  letter: 'APA and Chicago cite these in-text only.',
+  legislation: 'Name without the year, then the year and jurisdiction (Cth, NSW).',
+  bill: 'Name without the year, then the year and jurisdiction.',
+  case: 'Reported: (1992) 175 CLR 1. Unreported: [1992] HCA 23.',
+  manuscript: 'Add the archive and its reference number.',
 };
 
 export function tipsFor(item, styleName = '') {
   const t = sourceTypeFor(item);
   const tips = [];
   if (TYPE_TIPS[t.id]) tips.push(TYPE_TIPS[t.id]);
-  const s = styleName;
-  if (/^apa/.test(s) && ['website', 'journal', 'book', 'chapter', 'report', 'newspaper'].includes(t.id)) tips.push('APA: titles of works are in sentence case — only the first word, the first word after a colon, and names are capitalised.');
-  if (/^modern-language/.test(s) && ['website', 'blog', 'video', 'newspaper'].includes(t.id)) tips.push('MLA: an access date is optional but recommended for pages without a publication date.');
-  if (/^australian-guide-to-legal/.test(s) && !['legislation', 'bill', 'case'].includes(t.id)) tips.push('AGLC: your bibliography is automatically split into A Articles/Books/Reports, B Cases, C Legislation, D Treaties and E Other.');
-  if (/^(ieee|nlm|american-medical|vancouver)/.test(s)) tips.push('Numbered style: references are numbered in the order you first cite them in your paper.');
   return tips;
 }

@@ -209,6 +209,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
   // Descriptions MLA 9 doesn't put in Works Cited ("Video.", "Film.", "Song.")
   const MEDIA_LABEL = /^(film|movie|video|online video|song|album|track|music|audio|tv series episode|tv episode|television episode|tv series|television series|audio podcast episode|podcast episode|podcast|video podcast episode|radio broadcast)$/i;
   const SOCIAL_LABELS = { x: 'Post', twitter: 'Post', threads: 'Post', bluesky: 'Post', linkedin: 'Post', mastodon: 'Post', facebook: 'Status update', instagram: 'Photograph', tiktok: 'Video', reddit: 'Online forum post', youtube: 'Video' };
+  const isAi = item => /generative ai|large language model/i.test(item.genre || '') && item.type === 'webpage';
   const mlaPress = p => String(p).replace(/\bUniversity of ([\p{L} .'’-]+?) Press\b/u, 'U of $1 P').replace(/\bUniversity Press\b/, 'UP');
 
   function styleFixes(style, item) {
@@ -232,6 +233,14 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
       }
     }
 
+    // AI chats (APA 2025: Company. (2025, October 2). Chat title [Generative AI chat]. Tool. URL)
+    if (isAi(item)) {
+      if (!item.title) { item.title = item['container-title'] || 'Generative AI chat'; item.genre = 'Large language model'; delete item['container-title']; }
+      if (item.version && item['container-title'] && !item['container-title'].includes(item.version)) item['container-title'] = `${item['container-title']} (${item.version})`;
+      // MLA 9: the prompt is the title, and the tool isn't an author
+      if (mla) { delete item.author; if (item._prompt) item.title = item._prompt; }
+      if (/cite-them-right|harvard/.test(style.name) && item.author?.[0]?.literal) item.author = [{ literal: `${item.author[0].literal} ${item['container-title']?.replace(/\s*\(.*\)$/, '') || ''}`.trim() }];
+    }
     if (apa) {
       // APA 7: [Post] on X, [Status update] on Facebook, [Video] on TikTok…
       const platform = String(item['container-title'] || '').toLowerCase().replace(/\s*\(.*\)$/, '');
@@ -318,6 +327,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     // notes-only sources) — still give them their in-text citation
     const outside = clean.map(i => i.id).filter(id => !ids.includes(id));
     const byId = new Map(clean.map(i => [i.id, i]));
+    const rawById = new Map(items.map(i => [String(i.id), i]));
     const intext = {};
     for (const id of [...ids, ...outside]) {
       try { intext[id] = inText(engine, style, { id }, byId.get(id)); } catch { intext[id] = { paren: '', narrative: '' }; }
@@ -343,7 +353,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
         maxOffset: params.maxoffset || 0,
       },
       entries: [
-        ...ids.map((id, i) => fixLegal(style, clean, polish(style, byId.get(id), { id, html: (html[i] || '').trim(), text: decode((text[i] || '').trim()), intext: intext[id] }))),
+        ...placeByTitle(ids.map((id, i) => fixLegal(style, clean, polish(style, byId.get(id), { id, html: (html[i] || '').trim(), text: decode((text[i] || '').trim()), intext: intext[id] }, rawById.get(id)))), byId, style),
         ...outside.map(id => fixLegal(style, clean, { id, html: '', text: '', intext: intext[id], inBibliography: false })),
       ],
     };
@@ -372,9 +382,33 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     return out;
   }
 
+  // APA 9.47, MLA 9 and Harvard: a work listed by its title is alphabetised by the
+  // first significant word — "The zebra effect" goes under Z, "A brief history" under B.
+  // citeproc sorts on the whole title, so move those entries to where they belong.
+  const LEADING = /^(the|a|an)\s+/i;
+  const sortText = t => String(t || '').replace(/^[“‘"'\[(]+/, '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+  function placeByTitle(entries, byId, style) {
+    if (entries.length < 2 || entries.some(e => /^\s*(<[^>]+>)*[[(]?\d+[\])]?/.test(e.intext?.paren || '') && !/[a-z]/i.test(String(e.intext?.paren || '').replace(/<[^>]+>/g, '')))) return entries; // numbered
+    if (LEGAL_STYLE.test(style.name)) return entries;
+    const titleLed = e => { const it = byId.get(e.id); return it && !['legal_case', 'legislation', 'bill'].includes(it.type) && !['author', 'editor', 'director', 'host', 'composer'].some(r => it[r]?.length) && LEADING.test(sortText(e.text)); };
+    const moving = entries.filter(titleLed);
+    if (!moving.length) return entries;
+    const rest = entries.filter(e => !moving.includes(e));
+    // Keys for the entries that stay: "———." (same author again) shares the previous key
+    let prev = '';
+    const keyed = rest.map(e => { const k = /^[—–-]{2,}/.test(e.text) ? prev : sortText(e.text); prev = k; return { e, k }; });
+    for (const e of moving) {
+      const k = sortText(e.text).replace(LEADING, '');
+      let at = keyed.findIndex(x => x.k.localeCompare(k, undefined, { sensitivity: 'base' }) > 0 && !/^[—–-]{2,}/.test(x.e.text));
+      if (at < 0) at = keyed.length;
+      keyed.splice(at, 0, { e, k });
+    }
+    return keyed.map(x => x.e);
+  }
+
   // Finishing touches citeproc can't do from the style file alone
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  function polish(style, item, entry) {
+  function polish(style, item, entry, raw = item) {
     if (!item) return entry;
     let { html, text } = entry;
     // Never show the user a processor error: fall back to the bare essentials
@@ -382,6 +416,65 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
       const t = item.title || 'Untitled source';
       text = `${t}.${item.URL ? ` ${item.URL}` : ''}`;
       html = `<div class="csl-entry"><i>${esc(t)}</i>.${item.URL ? ` ${esc(item.URL)}` : ''}</div>`;
+    }
+    // AI chats in the styles whose manuals describe them differently from a web page
+    if (/generative ai|large language model/i.test(raw.genre || '') && entry.html) {
+      const [y, mo, d] = raw.issued?.['date-parts']?.[0] || [];
+      const tool = String(raw['container-title'] || '').replace(/\s*\((.*)\)$/, '') || 'AI';
+      const version = raw.version;
+      const company = raw.author?.[0]?.literal || '';
+      const url = raw.URL || '';
+      const FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      if (/^modern-language/.test(style.name)) {
+        // MLA 9: "Describe the symbolism…" prompt. ChatGPT, GPT-5 version, OpenAI, 2 Oct. 2025, chatgpt.com/share/…
+        const MON = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'June', 'July', 'Aug.', 'Sept.', 'Oct.', 'Nov.', 'Dec.'];
+        const date = y ? [d, mo && MON[mo - 1], y].filter(Boolean).join(' ') : '';
+        const what = raw._prompt ? `“${esc(raw._prompt.trim().replace(/[.\s]+$/, ''))}” prompt.` : `“${esc(raw.title || tool)}.”`;
+        const rest = [`<i>${esc(tool)}</i>`, version && `${esc(version)} version`, company && esc(company), date, url && esc(url.replace(/^https?:\/\//, ''))].filter(Boolean).join(', ');
+        html = `<div class="csl-entry">${what} ${rest}.</div>`;
+        text = decode(html.replace(/<[^>]+>/g, ''));
+      } else if (/cite-them-right|harvard/.test(style.name)) {
+        // Cite Them Right: a personal communication — OpenAI ChatGPT (2025) ChatGPT response to Jane Smith, 2 October.
+        const t = `${[company, tool].filter(Boolean).join(' ')} (${y || 'no date'}) ${tool} response to ${raw._receiver || 'the author'}${d && mo ? `, ${d} ${FULL[mo - 1]}` : ''}.`;
+        html = `<div class="csl-entry">${esc(t)}</div>`; text = t;
+      } else if (/^(chicago|turabian)/.test(style.name)) {
+        // Chicago 18 (14.112): cited in a note or the text, not the bibliography
+        const when = y ? `${mo ? `${FULL[mo - 1]} ${d ? `${d}, ` : ''}` : ''}${y}` : '';
+        const cite = `Text generated by ${tool}${version ? ` (${version})` : ''}, ${company || 'unknown company'}${when ? `, ${when}` : ''}`;
+        return { ...entry, html: '', text: '', inBibliography: false, intext: style.isNote ? { paren: `${esc(cite)}${url ? `, ${esc(url)}` : ''}.`, narrative: '' } : { paren: `(${esc(cite.replace(/^Text/, 'text'))})`, narrative: '' } };
+      }
+    }
+    // Cite Them Right fills in what the CSL file leaves out for these types
+    if (/cite-them-right/.test(style.name) && entry.html) {
+      const FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const [y, mo, d] = raw.issued?.['date-parts']?.[0] || [];
+      const dayMonth = d && mo ? `${d} ${FULL[mo - 1]}` : '';
+      const person = n => n.literal || [n.given, n['non-dropping-particle'], n.family].filter(Boolean).join(' ');
+      const add = (extra, before = /\.(<\/div>)?$/) => { if (!extra) return; html = html.replace(before, `${extra.startsWith(',') ? '' : '. '}${esc(extra.replace(/^,\s*/, ', '))}.$1`); text = text.replace(/\.$/, `${extra.startsWith(',') ? '' : '. '}${extra.replace(/^,\s*/, ', ')}.`); };
+      if (raw.type === 'motion_picture' && raw.director?.length && !text.includes('Directed by')) {
+        // Rear window (1954) Directed by Alfred Hitchcock. Paramount.
+        const by = `Directed by ${raw.director.map(person).join(' and ')}`;
+        html = html.replace(`(${y}).`, `(${y}) ${esc(by)}.`); text = text.replace(`(${y}).`, `(${y}) ${by}.`);
+      }
+      if (raw.type === 'broadcast' && !/podcast/i.test(`${raw.medium || ''} ${raw.genre || ''}`)) {
+        // 'Episode' (2008) Programme, Season 4, Episode 5. Channel, 28 February.
+        if (raw.number && !text.includes(raw.number)) { html = html.replace(/(<i>[^<]+<\/i>)\./, `$1, ${esc(raw.number)}.`); text = text.replace(new RegExp(`(${(raw['container-title'] || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\.`), `$1, ${raw.number}.`); }
+        if (dayMonth && !text.includes(dayMonth)) add(`, ${dayMonth}`);
+      }
+      if (raw.type === 'interview' && raw.interviewer?.length && !/Interviewed by/.test(text)) add(`Interviewed by ${raw.interviewer.map(person).join(' and ')}${dayMonth ? `, ${dayMonth}` : ''}`);
+      if (raw.type === 'graphic' && raw.archive && !text.includes(raw.archive)) add([raw.archive, raw['archive-place']].filter(Boolean).join(', '));
+      if (raw.type === 'patent' && raw.number && !text.includes(raw.number)) add(`${raw.authority ? `${raw.authority} ` : ''}Patent ${raw.number}`);
+      if (raw.type === 'manuscript' && raw.archive && !text.includes(raw.archive)) add(`${raw.genre && !text.includes(raw.genre) ? `${raw.genre}. ` : ''}${[raw.archive, raw.archive_location].filter(Boolean).join(', ')}`);
+    }
+    // MLA 9: "Patent no. AU2020104567", not a sentence starting "no."
+    if (/^modern-language/.test(style.name) && raw.type === 'patent') { html = html.replace('. no. ', '. Patent no. '); text = text.replace('. no. ', '. Patent no. '); }
+    // AGLC: a patent reads like a report — ‘Title’ (Authority, Number, Date)
+    if (/^australian-guide-to-legal/.test(style.name) && raw.type === 'patent' && raw.number) {
+      const [y, mo, d] = raw.issued?.['date-parts']?.[0] || [];
+      const FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      const who = (raw.author || []).map(n => n.literal || [n.family, n.given].filter(Boolean).join(', ')).join(' and ');
+      const t = `${who ? `${who}, ` : ''}‘${titleCase(raw.title || '')}’ (${[raw.authority, `Patent No ${raw.number}`, [d, mo && FULL[mo - 1], y].filter(Boolean).join(' ')].filter(Boolean).join(', ')})`;
+      html = `<div class="csl-entry">${esc(t)}</div>`; text = t;
     }
     // MLA 9 (5.96): URLs without http:// or https:// (DOIs keep https://doi.org/)
     if (/^modern-language/.test(style.name)) {
@@ -415,6 +508,22 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     if (locator) { cite.locator = String(locator); cite.label = label; }
     const r = fixLegal(style, [clean], { id: clean.id, intext: inText(engine, style, cite, clean) }, locator);
     return { paren: cleanPin(r.intext.paren), narrative: cleanPin(r.intext.narrative), isNote: style.isNote };
+  }
+
+  // Several sources in one citation: "(Adams, 2019; Brown & Lee, 2020)", "[1], [4]".
+  // The style decides the order (APA alphabetical, Harvard/Chicago by year…).
+  async function clusterMany({ items, ids, style: styleName = 'apa', lang }) {
+    const { style, lang: code } = await prepare(styleName, lang);
+    const clean = items.map(i => sanitizeItem(styleFixes(style, { ...i, id: String(i.id) })));
+    const byId = new Map(clean.map(i => [i.id, i]));
+    const want = ids.map(String).filter(id => byId.has(id));
+    const engine = engineFor(style, code, clean);
+    engine.setOutputFormat('html');
+    const legal = !LEGAL_STYLE.test(style.name) && want.some(id => localLegal(byId.get(id)));
+    if (!legal || style.isNote) return { paren: cleanPin(engine.makeCitationCluster(want.map(id => ({ id })))), isNote: style.isNote };
+    // Acts and cases written AGLC-style can't go through the style: join each citation
+    const parts = want.map(id => fixLegal(style, clean, { id, intext: inText(engine, style, { id }, byId.get(id)) }).intext.paren.replace(/^\(|\)$/g, ''));
+    return { paren: `(${parts.join('; ')})`, isNote: false };
   }
 
   // A whole document's citations in order — this is what makes "Ibid", "(n 3)"
@@ -480,7 +589,9 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
         const ids = (params.entry_ids || []).map(x => String(x[0] ?? x)).filter(id => !skipped.has(id));
         engine.setOutputFormat('text');
         const text = engine.makeBibliography()?.[1] || [];
-        entries = ids.map((id, k) => fixLegal(style, clean, polish(style, holder.map.get(id), { id, html: (html[k] || '').trim(), text: decode((text[k] || '').trim()), intext: { paren: '', narrative: '' } })));
+        const rawById = new Map(items.map(i => [String(i.id), i]));
+        entries = ids.map((id, k) => fixLegal(style, clean, polish(style, holder.map.get(id), { id, html: (html[k] || '').trim(), text: decode((text[k] || '').trim()), intext: { paren: '', narrative: '' } }, rawById.get(id))));
+        if (!/citation-number/.test(style.xml)) entries = placeByTitle(entries, holder.map, style);
       }
     }
     return { style: { name: style.name, title: style.title, isNote: style.isNote }, citations: formatted, entries };
@@ -496,6 +607,7 @@ export function createFormatter({ CSL, getText, getServerStyle }) {
     // Style-picker previews: don't let them push the project's engine out of the cache
     sample: args => format(args, { throwaway: true }),
     intext: intextOne,
+    cluster: clusterMany,
     document: formatDocument,
     styleInfo,
   };

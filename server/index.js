@@ -49,7 +49,7 @@ function rateLimit(max, windowMs) {
     const key = `${req.ip}|${req.path}`;
     const now = Date.now();
     const h = hits.get(key)?.filter(t => now - t < windowMs) || [];
-    if (h.length >= max) return res.status(429).json({ error: 'Slow down a little — too many requests. Try again in a minute.' });
+    if (h.length >= max) return res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
     h.push(now); hits.set(key, h);
     next();
   };
@@ -143,7 +143,7 @@ app.post('/api/cite-page', wrap(async req => {
   const hasDetails = /property="og:title"|name="citation_title"|application\/ld\+json|<h1[\s>]/i.test(html);
   const pageTitle = (html.match(/<title>([^<]*)/i) || [])[1]?.trim().toLowerCase() || '';
   if (!hasDetails && (!pageTitle || pageTitle === new URL(url).hostname.replace(/^www\./, '') || /captcha|datadome|px-captcha|cf-chl|challenge-platform|Just a moment|Verifying you are human/i.test(html))) {
-    throw Object.assign(new Error('That page was still showing a security check. Let it finish loading, then press the Cite button again.'), { status: 422 });
+    throw Object.assign(new Error('The page was still loading a security check. Try again once it has loaded.'), { status: 422 });
   }
   const { trace, ...r } = await citeUrl(url, { html });
   return { mode: 'item', ...r, item: tidyItem(r.item) };

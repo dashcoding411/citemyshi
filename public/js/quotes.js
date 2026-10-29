@@ -37,7 +37,7 @@ export function openQuoteForm(item, quoteId) {
   const m = openModal({
     title: existing ? 'Edit quote' : 'Save a quote',
     body: `
-      <div class="field wide" style="margin-bottom:12px"><label for="q-text">Quote — exactly as written in the source</label>
+      <div class="field wide" style="margin-bottom:12px"><label for="q-text">Quote, exactly as written</label>
         <textarea class="input" id="q-text" rows="5" placeholder="Paste or type the passage…" autofocus>${esc(existing?.text || '')}</textarea>
         <span id="q-words" style="font-size:12px;color:var(--muted)"></span></div>
       <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
@@ -49,7 +49,7 @@ export function openQuoteForm(item, quoteId) {
   });
   const count = () => {
     const n = words($('#q-text', m.el).value);
-    $('#q-words', m.el).textContent = n ? `${n} words${n >= 40 ? ' — long quote: it will be copied as a block quote (APA: 40+ words)' : ''}` : '';
+    $('#q-words', m.el).textContent = n ? `${n} words${n >= 40 ? ' (block quote)' : ''}` : '';
   };
   $('#q-text', m.el).oninput = count; count();
   $('[data-cancel]', m.el).onclick = () => m.close();
@@ -60,7 +60,7 @@ export function openQuoteForm(item, quoteId) {
     const quotes = existing ? item._quotes.map(x => x.id === q.id ? q : x) : [...(item._quotes || []), q];
     S.updateItem(item.id, { _quotes: quotes }, p.id);
     m.close();
-    toast(existing ? 'Quote updated' : `Quote saved${q.locator ? '' : ' — add the page number before you hand in'}`);
+    toast(existing ? 'Quote updated' : `Quote saved${q.locator ? '' : '. Add the page number.'}`);
   };
 }
 
@@ -104,10 +104,10 @@ export async function copyQuote(item, quoteId, fmt) {
     const r = await quoteWithCitation(item, q, fmt);
     if (r.footnote) {
       await copyRich(`${r.html}<br><br>Footnote: ${r.footnoteHtml}`, `${r.text}\n\nFootnote: ${r.footnote}`);
-      toast('Copied the quote and its footnote — paste the footnote into a Word/Docs footnote');
+      toast('Copied the quote and its footnote');
     } else {
       await copyRich(r.html, r.text);
-      toast(q.locator ? 'Copied with citation' : 'Copied — this quote has no page number yet');
+      toast(q.locator ? 'Copied with citation' : 'Copied. No page number yet.');
     }
   } catch (e) { toast(e.message, { error: true }); }
 }
@@ -121,7 +121,7 @@ export async function quotesExport(items, fmt) {
     for (const q of it._quotes) {
       const r = await quoteWithCitation(it, q, fmt);
       lines.push(`  ${r.text}${r.footnote ? `  [footnote: ${r.footnote}]` : ''}`);
-      if (q.comment) lines.push(`    — ${q.comment}`);
+      if (q.comment) lines.push(`    Note: ${q.comment}`);
     }
     lines.push('');
   }

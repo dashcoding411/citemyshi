@@ -45,7 +45,7 @@ async function loadProject(code) {
   if (clean.length !== 12) throw new Error('Codes are 12 letters and numbers, like K7Q2-M9XD-PL4W.');
   const res = await fetch(`https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/links/${clean}?key=${firebaseConfig.apiKey}`);
   if (res.status === 404 || res.status === 403) throw new Error('No project has that code. Check it on citemyshi.web.app (project menu → Use in Word / Google Docs).');
-  if (!res.ok) throw new Error('Couldn’t reach citemyshi — check your internet connection.');
+  if (!res.ok) throw new Error('Can’t connect. Check your internet.');
   const data = JSON.parse((await res.json()).fields.data.stringValue);
   return { code: clean, project: data };
 }
@@ -178,7 +178,7 @@ function bibliography() {
     await state.host.updateCitations(state.isNote, async pls => { payloads = pls; return null; }); // read only
     const known = new Set(p.items.map(i => i.id));
     const citations = payloads.filter(pl => known.has(pl.i)).map((pl, k) => ({ id: `c${k}`, items: [{ id: pl.i }] }));
-    if (!citations.length) throw new Error('Insert some citations first — the bibliography lists the sources you cite.');
+    if (!citations.length) throw new Error('Insert some citations first.');
     const r = await formatDocument({ items: p.items, style: p.style, lang: p.lang, citations });
     const aglc = /^australian-guide-to-legal/.test(p.style);
     let entries = r.entries.map(e => ({ ...toRuns(e.html.replace(/<div class="csl-left-margin">([\s\S]*?)<\/div>/, '$1 ')), id: e.id }));

@@ -12,7 +12,7 @@ const loadLanguages = () => (languagesCache ||= fetch('/locales/locales.json').t
   .then(m => Object.entries(m['language-names']).map(([code, [native, english]]) => ({ code, native, english })).sort((a, b) => a.english.localeCompare(b.english)))
   .catch(() => [{ code: 'en-US', english: 'English (US)', native: 'English (US)' }]));
 
-const TABS = [{ id: 'popular', label: 'Popular', icon: 'sparkles' }, ...DEGREES, { id: 'uni', label: 'Universities', icon: 'building' }];
+const TABS = [{ id: 'popular', label: 'Popular', icon: 'star' }, ...DEGREES, { id: 'uni', label: 'Universities', icon: 'building' }];
 
 export function openStylePicker() {
   const p = active();
@@ -24,7 +24,7 @@ export function openStylePicker() {
     title: 'Citation style',
     wide: true,
     body: `
-      <div class="style-search">${icon('search')}<input class="input" id="style-q" placeholder="Search all 10,869 styles — APA, AGLC, your uni, a journal…" autocomplete="off" autofocus></div>
+      <div class="style-search">${icon('search')}<input class="input" id="style-q" placeholder="Search 10,869 styles: APA, AGLC, your uni…" autocomplete="off" autofocus></div>
       <div class="deg-tabs" role="tablist">${TABS.map(t => `<button class="deg-tab" role="tab" data-tab="${t.id}">${icon(t.icon)} ${esc(t.label)}</button>`).join('')}</div>
       <div class="style-list" id="style-list"></div>
       <div class="style-sample" id="style-sample" hidden></div>`,
@@ -39,7 +39,7 @@ export function openStylePicker() {
 
   loadLanguages().then(langs => {
     langSel.innerHTML = `<option value="" ${!p.lang ? 'selected' : ''}>Style’s own language (recommended)</option>` +
-      langs.map(l => `<option value="${esc(l.code)}" ${l.code === p.lang ? 'selected' : ''}>${esc(l.english)}${l.native !== l.english ? ` — ${esc(l.native)}` : ''}</option>`).join('');
+      langs.map(l => `<option value="${esc(l.code)}" ${l.code === p.lang ? 'selected' : ''}>${esc(l.english)}${l.native !== l.english ? ` (${esc(l.native)})` : ''}</option>`).join('');
   });
 
   const row = (s, extra = '') => `
@@ -61,7 +61,7 @@ export function openStylePicker() {
       if (query) {
         const r = await api(`/api/styles?q=${encodeURIComponent(query)}&limit=100&full=1`);
         if (my !== seq) return;
-        html = r.results.length ? `<div class="menu-label">${r.total} matching style${r.total === 1 ? '' : 's'}${r.total > 100 ? ' — showing the best 100' : ''}</div>${r.results.map(s => row(s)).join('')}` : noMatch(query);
+        html = r.results.length ? `<div class="menu-label">${r.total} matching style${r.total === 1 ? '' : 's'}${r.total > 100 ? ', showing 100' : ''}</div>${r.results.map(s => row(s)).join('')}` : noMatch(query);
       } else if (tab === 'popular') {
         const results = await api(`/api/styles?q=${encodeURIComponent(query)}&limit=60`);
         if (my !== seq) return;
@@ -79,7 +79,7 @@ export function openStylePicker() {
         if (curated.length) html += `<div class="menu-label">Most used in ${esc(deg.label)}</div>${curated.map(([n, t, region]) => row({ name: n, title: t }, region ? `<span class="badge">${esc(region)}</span>` : '')).join('')}`;
         const rest = more.results.filter(r => !deg.styles.some(([n]) => n === r.name));
         if (rest.length) html += `<div class="menu-label">${query ? `Other matches (${more.total})` : `Every ${esc(deg.label)} style (${more.total})`}</div>${rest.map(s => row(s)).join('')}`;
-        if (!query && more.total > 300) html += `<div class="results-empty" style="padding:12px">Showing the first 300 — type above to search all ${more.total}.</div>`;
+        if (!query && more.total > 300) html += `<div class="results-empty" style="padding:12px">Showing 300 of ${more.total}. Search to find more.</div>`;
         if (!html) html = noMatch(query);
       } else if (tab === 'uni') {
         const r = await api(`/api/styles?uni=1&q=${encodeURIComponent(query)}&limit=400`);
@@ -97,7 +97,7 @@ export function openStylePicker() {
   }
 
   function noMatch(query) {
-    return `<div class="results-empty">No styles match “${esc(query)}”. Try a shorter name, an abbreviation (e.g. AGLC, MLA) or your university’s city.</div>`;
+    return `<div class="results-empty">No styles match “${esc(query)}”. Try a shorter name or an abbreviation.</div>`;
   }
 
   const showSample = debounce(async s => {
@@ -134,7 +134,7 @@ export function openStylePicker() {
     if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
     if (e.key === 'Enter') { e.preventDefault(); const b = flat[Math.max(0, kb)]; choose({ name: b.dataset.name, title: b.dataset.title }); }
   };
-  langSel.onchange = e => { updateProject(p.id, { lang: e.target.value }); toast(`Citation language: ${e.target.selectedOptions[0].textContent.split(' — ')[0]}`); showSample({ name: p.style, title: p.styleTitle }); };
+  langSel.onchange = e => { updateProject(p.id, { lang: e.target.value }); toast(`Citation language: ${e.target.selectedOptions[0].textContent.split(' (')[0]}`); showSample({ name: p.style, title: p.styleTitle }); };
   $('[data-close-btn]', m.el).onclick = () => m.close();
   load();
   showSample({ name: p.style, title: p.styleTitle });
@@ -178,14 +178,14 @@ export function openInText(item) {
         <div class="field"><label>Cite a specific</label><select class="select" id="loc-label">${labels.map(([k, l]) => `<option value="${k}" ${k === preKey ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <div class="field"><label>Number (optional)</label><input class="input" id="loc" placeholder="${isAct ? 'e.g. 9 or 18–20' : 'e.g. 42 or 42-45'}" value="${esc(preValue)}" autofocus></div>
       </div>
-      ${isAct || isCase ? '' : `<details class="secondary-src" style="margin:-4px 0 14px"><summary style="cursor:pointer;color:var(--text-2);font-size:13px">Quoting someone this source quotes? (secondary source)</summary>
+      ${isAct || isCase ? '' : `<details class="secondary-src" style="margin:-4px 0 14px"><summary style="cursor:pointer;color:var(--text-2);font-size:13px">Secondary source (as cited in)</summary>
         <div class="grid" style="grid-template-columns:1fr 110px;margin-top:10px">
           <div class="field"><label>Original author(s)</label><input class="input" id="sec-author" placeholder="e.g. Piaget"></div>
           <div class="field"><label>Original year</label><input class="input" id="sec-year" placeholder="e.g. 1952"></div>
         </div>
-        <p style="color:var(--muted);font-size:12px;margin:6px 0 0">Only the source you actually read goes in the reference list — this one.</p></details>`}
+        <p style="color:var(--muted);font-size:12px;margin:6px 0 0">Only the source you read goes in the reference list.</p></details>`}
       <div id="intext-out"><div class="skel"><div style="width:40%"></div></div></div>
-      <p style="color:var(--muted);font-size:12.5px;margin:12px 0 0">Tip: in-text citations go in your writing right after the quote or paraphrase.</p>`,
+      `,
     foot: '<span class="spacer"></span><button class="btn" data-done>Done</button>',
   });
   const out = $('#intext-out', m.el);
@@ -238,7 +238,7 @@ export function openImport() {
   const m = openModal({
     title: 'Import citations',
     body: `
-      <p style="margin:0 0 12px;color:var(--text-2)">Paste or upload citations exported from Zotero, Mendeley, EndNote, Google Scholar, MyBib, etc. Supports <b>BibTeX</b>, <b>RIS</b>, and <b>CSL-JSON</b>. You can also paste a list of DOIs.</p>
+      <p style="margin:0 0 12px;color:var(--text-2)">Paste or upload BibTeX, RIS or CSL-JSON, or a list of DOIs.</p>
       <textarea class="input" id="imp-text" rows="10" placeholder="@article{smith2020, …}" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px"></textarea>
       <div style="margin-top:10px;display:flex;gap:8px;align-items:center"><label class="btn btn-sm">${icon('upload')} Choose file<input type="file" id="imp-file" accept=".bib,.ris,.json,.txt,.nbib,.enw" hidden></label><span id="imp-name" style="color:var(--muted);font-size:12.5px"></span></div>`,
     foot: `<span class="spacer"></span><button class="btn" data-cancel>Cancel</button><button class="btn btn-primary" data-go>${icon('download')} Import</button>`,
@@ -263,7 +263,7 @@ export function openImport() {
       } else {
         try {
           const json = JSON.parse(text);
-          if (json.app === 'citemyshi') throw new Error('That’s a full citemyshi backup — use “Restore backup” in the sidebar menu instead.');
+          if (json.app === 'citemyshi') throw new Error('That’s a citemyshi backup. Use “Restore backup” in the sidebar menu.');
         } catch (e) { if (e.message.startsWith('That’s')) throw e; }
         items = (await api('/api/import', { body: { text } })).items;
       }

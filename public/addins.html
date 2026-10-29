@@ -25,14 +25,14 @@
   <div class="page">
     <a class="brand" href="/" style="padding:0"><span class="brand-mark">“</span><span>citemyshi</span></a>
     <h1>Cite while you write</h1>
-    <p class="lead">Insert citations and footnotes from your citemyshi project straight into Word or Google Docs. Click <b>Update citations</b> any time and every footnote is renumbered properly — <b>Ibid</b>, <b>(n 3)</b>, short forms and IEEE numbering — then add your bibliography in one click.</p>
+    <p class="lead">Add citations and footnotes to Word or Google Docs. <b>Update citations</b> renumbers footnotes, including Ibid and short forms.</p>
 
     <div class="card">
       <b>First, get your project’s connection code</b>
       <ol>
-        <li>On <a href="/">citemyshi.web.app</a>, sign in (bottom-left) so your project can be shared securely.</li>
+        <li>On <a href="/">citemyshi.web.app</a>, sign in (bottom left).</li>
         <li>Open the project’s menu (<b>⋯</b> next to its name in the sidebar) → <b>Use in Word / Google Docs</b>.</li>
-        <li>Copy the 12-character code. Anyone with it can <i>read</i> that one project’s sources, so treat it like a private link.</li>
+        <li>Copy the code. Keep it private: anyone with it can read that project.</li>
       </ol>
     </div>
 
@@ -42,10 +42,10 @@
       <ol>
         <li><b>Word on the web or Windows (Microsoft 365):</b> Home or Insert tab → <b>Add-ins</b> → <b>More add-ins</b> → <b>My Add-ins</b> → <b>Upload My Add-in</b> → choose the file you downloaded.</li>
         <li><b>Word on Mac:</b> put the file in <code>~/Library/Containers/com.microsoft.Word/Data/Documents/wef/</code> (create the <code>wef</code> folder if it isn’t there), then restart Word and look under Insert → Add-ins → My Add-ins.</li>
-        <li>Open the <b>References</b> tab → <b>Citations</b>. Enter your code once — the document remembers it.</li>
-        <li>Click where the citation goes, pick the source, add a page or section if needed, and click <b>Insert</b>. For footnote styles (AGLC, Chicago, OSCOLA) a footnote is created for you.</li>
+        <li>Open <b>References</b> → <b>Citations</b> and enter your code.</li>
+        <li>Click where the citation goes, pick the source and click <b>Insert</b>.</li>
       </ol>
-      <p class="note small" style="color:var(--muted)">Footnotes need Word for Microsoft 365, Word 2021 or Word on the web. Older Word versions can still insert in-text citations and bibliographies.</p>
+      <p class="note small" style="color:var(--muted)">Footnotes need Word 2021, Microsoft 365 or Word on the web.</p>
     </div>
 
     <h2 id="docs"><svg width="24" height="24" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#4285F4"/><path d="M7 7h10M7 11h10M7 15h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg> Google Docs</h2>
@@ -54,19 +54,19 @@
         <li>Open your essay in Google Docs → <b>Extensions</b> → <b>Apps Script</b>.</li>
         <li>Replace everything in <code>Code.gs</code> with the code below and save.</li>
         <li>Click <b>+</b> next to Files → <b>HTML</b>, name it <code>Sidebar</code> (exactly), paste the second block below and save.</li>
-        <li>Reload your document. A <b>citemyshi</b> menu appears → <b>Open citemyshi</b>. Google asks you to allow it once (it can only access <i>this</i> document).</li>
-        <li>Enter your code. For footnote styles, add a footnote first (<span class="kbd2">Ctrl/⌘ + Alt + F</span>) and click <b>Insert</b> with your cursor inside it.</li>
+        <li>Reload your document. A <b>citemyshi</b> menu appears → <b>Open citemyshi</b>. Allow access when asked.</li>
+        <li>Enter your code. For footnotes, add a footnote first (<span class="kbd2">Ctrl/⌘ + Alt + F</span>), then click <b>Insert</b> inside it.</li>
       </ol>
       <div class="row"><b>Code.gs</b><button class="btn btn-sm" data-copy="code">Copy</button></div>
       <pre id="code">Loading…</pre>
       <div class="row"><b>Sidebar.html</b><button class="btn btn-sm" data-copy="sidebar">Copy</button></div>
       <pre id="sidebar">Loading…</pre>
-      <p class="small" style="color:var(--muted)">The script lives in that document only. To use citemyshi in another document, repeat these steps there — or keep one essay template with it set up and use File → Make a copy.</p>
+      <p class="small" style="color:var(--muted)">This works in one document. For others, repeat the steps or copy a document that has it.</p>
     </div>
 
     <h2>Any other editor</h2>
     <div class="card">
-      In your project, click <b>Footnotes</b> (or <b>Citation order</b>), list your citations in essay order, and copy the finished footnotes — Ibid and short forms included — into Pages, LibreOffice, LaTeX or anything else.
+      Use <b>Footnotes</b> in your project, then copy them into any editor.
     </div>
   </div>
   <div class="toasts" id="toasts"></div>

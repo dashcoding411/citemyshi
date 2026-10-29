@@ -66,7 +66,7 @@ export const DEGREES = [
     ],
   },
   {
-    id: 'science', label: 'Science', icon: 'sparkles', fields: ['science', 'biology', 'chemistry', 'physics', 'botany', 'zoology', 'geology', 'astronomy', 'math'],
+    id: 'science', label: 'Science', icon: 'flask', fields: ['science', 'biology', 'chemistry', 'physics', 'botany', 'zoology', 'geology', 'astronomy', 'math'],
     styles: [
       ['harvard-cite-them-right', 'Harvard (Cite Them Right)'],
       ['apa', 'APA 7th edition'],

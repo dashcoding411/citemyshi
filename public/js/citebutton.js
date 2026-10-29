@@ -39,7 +39,7 @@ function grabPage(app) {
   // A small copy travels in the link itself, for sites that cut the connection between windows
   const small = `<!doctype html><html lang="${esc(document.documentElement.lang || '')}"><head>${[...head.querySelectorAll('title,meta,link[rel="canonical"]')].map(e => e.outerHTML).join('').slice(0, 12000)}</head><body>${parts.filter(p => !/^<script/.test(p)).slice(0, 12).join('').slice(0, 6000)}</body></html>`;
   const w = window.open(`${app}/?cite-page=1#${encodeURIComponent(JSON.stringify({ url: location.href, html: small }))}`, '_blank');
-  if (!w) { alert('Allow pop-ups for this site, then press the citemyshi button again.'); return; }
+  if (!w) { alert('Allow pop-ups for this site, then try again.'); return; }
   const msg = { type: 'citemyshi-page', url: location.href, html };
   let n = 0;
   const t = setInterval(() => { try { w.postMessage(msg, app); } catch (e) { /* not ready yet */ } if (++n > 80) clearInterval(t); }, 250);
@@ -75,23 +75,23 @@ export function openCiteButton() {
   const m = openModal({
     title: 'The Cite button',
     body: `
-      <p style="margin:0 0 12px;color:var(--text-2)">Some websites don’t let citation tools read them, and journals hide details behind your uni login. The Cite button reads the page <b>you’re looking at</b> instead — so it works on any page you can open.</p>
+      <p style="margin:0 0 12px;color:var(--text-2)">Cites the page you’re on. Works on sites that block citation tools and on journal pages behind your uni login.</p>
       <div class="cite-button-row" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:16px 0">
-        <a class="btn btn-primary" href="${esc(BOOKMARKLET)}" data-bookmarklet draggable="true" title="Drag me to your bookmarks bar">${icon('quote')} Cite with citemyshi</a>
-        <span style="color:var(--muted);font-size:13px">← drag this to your bookmarks bar</span>
+        <a class="btn btn-primary" href="${esc(BOOKMARKLET)}" data-bookmarklet draggable="true" style="text-decoration:none">${icon('quote')} Cite with citemyshi</a>
+        <span style="color:var(--muted);font-size:13px">← drag to your bookmarks bar</span>
       </div>
       <ol style="padding-left:20px;margin:0 0 12px;color:var(--text-2);font-size:14px">
-        <li>Show your bookmarks bar: <span class="kbd">Ctrl/⌘ + Shift + B</span>.</li>
-        <li>Drag the blue button onto it.</li>
-        <li>On any page you want to cite, click <b>Cite with citemyshi</b> — the citation opens here, ready to check and save.</li>
+        <li>Show the bookmarks bar: <span class="kbd">Ctrl/⌘ + Shift + B</span></li>
+        <li>Drag the button onto it</li>
+        <li>Click it on any page you want to cite</li>
       </ol>
       <details style="font-size:13px;color:var(--text-2)"><summary style="cursor:pointer">On a phone or iPad</summary>
-        <p>Bookmark any page, then edit that bookmark: name it “Cite with citemyshi” and replace its address with the code below. To use it, open your bookmarks while on the page you want to cite and tap it.</p>
+        <p>Bookmark any page, then edit the bookmark and replace its address with this code.</p>
         <button class="btn btn-sm" data-copy-code>${icon('copy')} Copy the code</button>
       </details>`,
     foot: '<span class="spacer"></span><button class="btn" data-done>Done</button>',
   });
-  $('[data-bookmarklet]', m.el).onclick = e => { e.preventDefault(); toast('Drag the button to your bookmarks bar, then use it on the page you want to cite'); };
+  $('[data-bookmarklet]', m.el).onclick = e => { e.preventDefault(); toast('Drag it to your bookmarks bar'); };
   $('[data-copy-code]', m.el).onclick = async () => { await copyRich(esc(BOOKMARKLET), BOOKMARKLET); toast('Code copied'); };
   $('[data-done]', m.el).onclick = () => m.close();
 }

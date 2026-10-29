@@ -688,6 +688,34 @@ async function stanfordEncyclopedia(url) {
   });
 }
 
+// Generative AI chats: company, tool, and the chat's own title when the share page has one
+const AI_TOOLS = [
+  [/(^|\.)chatgpt\.com$|^chat\.openai\.com$/, 'OpenAI', 'ChatGPT'], [/^gemini\.google\.com$|^g\.co$/, 'Google', 'Gemini'],
+  [/^copilot\.microsoft\.com$/, 'Microsoft', 'Copilot'], [/^claude\.ai$/, 'Anthropic', 'Claude'], [/(^|\.)perplexity\.ai$/, 'Perplexity AI', 'Perplexity'],
+  [/^grok\.com$/, 'xAI', 'Grok'], [/^chat\.deepseek\.com$/, 'DeepSeek', 'DeepSeek'], [/^chat\.mistral\.ai$/, 'Mistral AI', 'Le Chat'],
+];
+export function aiTool(url) {
+  const host = hostOf(url);
+  if (host === 'g.co' && !/\/gemini/.test(url)) return null;
+  const hit = AI_TOOLS.find(([re]) => re.test(host));
+  return hit ? { company: hit[1], tool: hit[2] } : null;
+}
+async function aiChat(url, givenHtml) {
+  const { company, tool } = aiTool(url);
+  let title = '';
+  try {
+    const html = givenHtml || (await fetchPage(url)).html || '';
+    const $ = cheerio.load(slimHtml(html));
+    title = cleanText($('meta[property="og:title"]').attr('content') || $('title').first().text());
+    title = title.replace(new RegExp(`^\\W*${tool}\\s*[-–—|:]\\s*|\\s*[-–—|:]\\s*${tool}\\W*$`, 'i'), '').trim();
+    if (new RegExp(`^\\W*(${tool}|${company})\\b`, 'i').test(title) && title.split(' ').length < 6) title = '';
+  } catch {}
+  const warnings = ['Check the date of the chat.'];
+  if (!title) warnings.push('Give the chat a title.');
+  
+  return { item: prune({ type: 'webpage', genre: 'Generative AI chat', title: title || undefined, author: [{ literal: company }], 'container-title': tool, issued: today(), URL: cleanUrl(url), accessed: today() }), source: 'AI chat', warnings };
+}
+
 function amazonIsbn(url) {
   const m = url.match(/\/(?:dp|gp\/product|product|ASIN)\/([0-9]{9}[0-9X])(?:[/?]|$)/i);
   return m && validIsbn(m[1]) ? m[1] : null;
@@ -840,12 +868,13 @@ export async function citeUrl(inputUrl, { html: givenHtml } = {}) {
     const item = legalFromPage(url, title);
     if (item) {
       const missing = !item.title;
-      return { item: { ...item, URL: cleanUrl(url) }, source: missing ? 'URL' : 'legal database', warnings: missing ? [`${hostOf(url)} doesn’t let us read the page, so we filled in what the link tells us${item.type === 'legal_case' ? ' (court, year and number)' : ' (jurisdiction and year)'}. Add the ${item.type === 'legal_case' ? 'case name' : 'name of the Act'}.`] : [] };
+      return { item: { ...item, URL: cleanUrl(url) }, source: missing ? 'URL' : 'legal database', warnings: missing ? [`Add the ${item.type === 'legal_case' ? 'case name' : 'name of the Act'}.`] : [] };
     }
   }
 
   // Fast paths for sites with good APIs
   try {
+    if (aiTool(url)) return await aiChat(url, givenHtml);
     if (/^(youtube\.com|youtu\.be|music\.youtube\.com)$/.test(host)) return { item: await youtube(url), source: 'YouTube' };
     if (host === 'vimeo.com') return { item: await vimeo(url), source: 'Vimeo' };
     if (/wikipedia\.org$/.test(host) && /\/wiki\//.test(url)) return { item: await wikipedia(url), source: 'Wikipedia' };
@@ -862,7 +891,7 @@ export async function citeUrl(inputUrl, { html: givenHtml } = {}) {
     if (host === 'jstor.org') { const id = (url.match(/\/stable\/(?:pdf\/)?(\d+)/) || [])[1]; if (id) return { item: await lookupDoi(`10.2307/${id}`), source: 'DOI' }; }
     if (/(^|\.)amazon\./.test(host)) { const isbn = amazonIsbn(url); if (isbn) return { item: await lookupIsbn(isbn), source: 'ISBN' }; }
     if (/^books\.google\./.test(host) || /google\.[a-z.]+$/.test(host) && /\/books\//.test(url)) { const r = await googleBooks(url); if (r) return { item: r, source: 'Google Books' }; }
-  } catch (e) { warnings.push(`Quick lookup failed (${e.message}); scanned the page instead.`); }
+  } catch (e) {  }
 
   // DOI embedded in a publisher URL (e.g. /doi/10.1177/...)
   const urlDoi = (host === 'nature.com' && (url.match(/\/articles\/([a-z0-9.-]+)/i) || [])[1] && `10.1038/${url.match(/\/articles\/([a-z0-9.-]+)/i)[1]}`) || (decodeURIComponent(url).match(/\/(?:doi|abs|full|pdf|epdf|article|chapter|book)\/(?:abs\/|full\/|pdf\/|epdf\/)?(10\.\d{4,9}\/[^?#\s]+?)(?:\.pdf)?(?:[?#]|$)/) || decodeURIComponent(url).match(/[?&]doi=(10\.\d{4,9}\/[^&#\s]+)/) || [])[1];
@@ -875,12 +904,12 @@ export async function citeUrl(inputUrl, { html: givenHtml } = {}) {
     if (ts) return { item: ts, source: 'Zotero translator' };
     try {
       const archived = await within(fromArchive(url), 14000);
-      if (archived) return { item: archived.item, source: 'Web archive', warnings: [`${hostOf(url)} doesn’t let us read the page directly, so we used the Internet Archive’s copy. Check the date matches the version you read.`] };
+      if (archived) return { item: archived.item, source: 'Web archive', warnings: ['Read from an archived copy of the page. Check the date.'] };
     } catch (err) { trace.push(`archive: ${err.message}`); }
     // Blocked, but the link often contains the title (ResearchGate, Academia…): look it up
     const guess = fromUrlOnly(url);
     try { const found = await within(findByTitle(guess.title), 5000); if (found) return { item: found, source: 'DOI' }; } catch {}
-    return { item: guess, source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`], trace };
+    return { item: guess, source: 'URL', warnings: ['Couldn’t open this page, so the details are a guess. Check them, or use the Cite button.'], trace };
   }
 
   let result;
@@ -893,9 +922,9 @@ export async function citeUrl(inputUrl, { html: givenHtml } = {}) {
   if (page.status === 404) {
     try {
       const archived = await within(fromArchive(url), 14000);
-      if (archived) return { item: archived.item, source: 'Web archive', warnings: ['That page no longer exists, so we used the Internet Archive’s copy. Check this is the page you read.'] };
+      if (archived) return { item: archived.item, source: 'Web archive', warnings: ['This page no longer exists. Read from an archived copy.'] };
     } catch (err) { trace.push(`archive: ${err.message}`); }
-    return { item: fromUrlOnly(url), source: 'URL', warnings: ['That page says "not found", so we guessed from the link. Double-check the link and details.'] };
+    return { item: fromUrlOnly(url), source: 'URL', warnings: ['Page not found. Check the link.'] };
   }
 
   // Enrich from authoritative sources
@@ -923,7 +952,7 @@ export async function citeUrl(inputUrl, { html: givenHtml } = {}) {
   }
   if (!item.title) {
     item.title = fromUrlOnly(url).title;
-    warnings.push(`We couldn’t read this page’s title, so we guessed “${item.title}” from the link. Please type the real title.`);
+    warnings.push('Couldn’t read the title. Check it.');
   }
   return { item: prune(item), source, warnings, trace };
 }

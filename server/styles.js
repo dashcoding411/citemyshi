@@ -47,7 +47,7 @@ async function fetchStyleXml(name) {
   }
   if (!indexByName.has(name)) throw Object.assign(new Error(`There’s no citation style called “${name}”`), { status: 404 });
   const res = await fetch(`https://www.zotero.org/styles/${name}`, { headers: { 'User-Agent': 'citemyshi' }, signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`Couldn’t download the “${name}” style — try again`);
+  if (!res.ok) throw new Error(`Couldn’t load the “${name}” style. Try again.`);
   const xml = await res.text();
   await fsp.mkdir(cacheDir, { recursive: true });
   await fsp.writeFile(path.join(cacheDir, `${name}.csl`), xml);

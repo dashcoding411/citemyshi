@@ -6,7 +6,7 @@ import { state, active } from './store.js';
 import { openEditor } from './editor.js';
 import { openStylePicker, openInText, openImport, pickProject } from './dialogs.js';
 import { sourceBadge, fixAll, openPaperCheck } from './audit.js';
-import { formatBibliography } from './formatter.js';
+import { formatBibliography, formatCluster } from './formatter.js';
 import { DEGREES } from './degrees.js';
 import { quotesHtml, openQuoteForm, deleteQuote, copyQuote, quotesExport } from './quotes.js';
 import { readPdf } from './pdf.js';
@@ -85,11 +85,11 @@ function accountHtml() {
 const GOOGLE_G = '<svg width="14" height="14" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.6 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 
 async function doSignIn(btn) {
-  if (!cloudMod) return toast('Sync is unavailable right now — check your connection', { error: true });
+  if (!cloudMod) return toast('Sync is unavailable. Check your connection.', { error: true });
   btn && (btn.disabled = true);
   try {
     await cloudMod.signIn();
-    toast('Signed in — your projects will sync across devices');
+    toast('Signed in. Your projects now sync.');
   } catch (e) {
     const msg = cloudMod.friendlyError(e);
     if (msg) toast(msg, { error: true, duration: 10000 });
@@ -104,7 +104,7 @@ function accountMenu(anchor) {
     c.error && { label: c.error, icon: 'alert', onClick: () => toast(c.error, { duration: 10000 }) },
     { label: c.user.email, icon: 'user' },
     { sep: true },
-    { label: 'Sign out', icon: 'external', onClick: async () => { await cloudMod.signOut(); toast('Signed out — your projects stay saved on this device'); } },
+    { label: 'Sign out', icon: 'external', onClick: async () => { await cloudMod.signOut(); toast('Signed out. Your projects stay on this device.'); } },
   ], { align: 'right' });
 }
 
@@ -152,7 +152,7 @@ function folderMenu(anchor, id) {
     { label: 'Color', heading: true },
     { html: `<div class="swatches">${FOLDER_COLORS.map(c => `<span class="swatch ${f.color === c ? 'on' : ''}" style="background:${c}" data-c="${c}" role="button" aria-label="Color ${c}"></span>`).join('')}</div>`, onMount: (el, close) => $$('[data-c]', el).forEach(s => s.onclick = () => { S.updateFolder(id, { color: s.dataset.c }); close(); }) },
     { sep: true },
-    { label: 'Delete folder (keep projects)', icon: 'folder', onClick: () => { const r = S.deleteFolder(id); toast(`Folder deleted — ${r.inside.length} project${r.inside.length === 1 ? '' : 's'} moved out`); } },
+    { label: 'Delete folder (keep projects)', icon: 'folder', onClick: () => { const r = S.deleteFolder(id); toast(`Folder deleted. ${r.inside.length} project${r.inside.length === 1 ? '' : 's'} moved out.`); } },
     { label: 'Delete folder and projects', icon: 'trash', danger: true, onClick: async () => {
       const n = state.projects.filter(p => p.folderId === id).length;
       if (await confirmDialog({ title: 'Delete folder and projects?', message: `This deletes “${esc(f.name)}” and the ${n} project${n === 1 ? '' : 's'} inside it. This can’t be undone.`, confirm: 'Delete all', danger: true })) S.deleteFolder(id, { withProjects: true });
@@ -273,7 +273,7 @@ function renderTopbar() {
     ${ui.showProjectNotes ? '' : ''}`;
   const notesHost = $('#projNotes');
   if (ui.showProjectNotes) {
-    if (!notesHost) $('#topbar').insertAdjacentHTML('afterend', `<div class="project-notes" id="projNotes"><textarea placeholder="Notes for this whole project — assignment brief, due date, thesis ideas…">${esc(p.notes || '')}</textarea></div>`);
+    if (!notesHost) $('#topbar').insertAdjacentHTML('afterend', `<div class="project-notes" id="projNotes"><textarea placeholder="Project notes: brief, due date, ideas…">${esc(p.notes || '')}</textarea></div>`);
     else $('textarea', notesHost).value = p.notes || '';
   } else notesHost?.remove();
 }
@@ -284,9 +284,9 @@ function openStyleHelp() {
   const m = openModal({
     title: 'Which citation style should I use?',
     wide: true,
-    body: `<p style="margin:0 0 14px;color:var(--text-2)">Your unit guide or assignment brief always wins — but these are the styles each field most often uses. Click one to use it for <b>${esc(p.name)}</b>.</p>
+    body: `<p style="margin:0 0 14px;color:var(--text-2)">The styles each field uses most. Your unit guide comes first.</p>
       <div class="style-help-grid">${DEGREES.map(d => `<div class="style-help-card"><div class="t">${icon(d.icon)} ${esc(d.label)}</div>${d.styles.slice(0, 3).map(([n, t, region]) => `<button class="chip ${p.style === n ? 'active' : ''}" data-use-style="${n}" data-title="${esc(t)}">${esc(t)}${region ? ` · ${esc(region)}` : ''}</button>`).join('')}</div>`).join('')}</div>
-      <p style="margin:14px 0 0;color:var(--muted);font-size:13px">Your uni has its own version (e.g. “Monash Harvard”)? Open <b>Citation style → Universities</b> and search for it.</p>`,
+      <p style="margin:14px 0 0;color:var(--muted);font-size:13px">Uni versions (e.g. Monash Harvard) are under <b>Citation style → Universities</b>.</p>`,
     foot: '<span class="spacer"></span><button class="btn" data-close-btn>Close</button>',
   });
   $$('[data-use-style]', m.el).forEach(b => b.onclick = () => { S.updateProject(p.id, { style: b.dataset.useStyle, styleTitle: b.dataset.title }); m.close(); toast(`Style changed to ${b.dataset.title}`); });
@@ -301,17 +301,17 @@ async function openShare(projectId) {
   const box = $('#sh', m.el);
   const draw = () => {
     if (!cloudMod?.cloud?.user) {
-      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Work on <b>${esc(p.name)}</b> together: everyone in the group can add sources, notes and quotes, and changes appear for everyone. Sign in first so only your group can see it.</p>
+      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Sign in to share <b>${esc(p.name)}</b> with your group.</p>
         <button class="btn btn-primary" data-sh-signin>${GOOGLE_G} Sign in with Google</button>`;
       $('[data-sh-signin]', box).onclick = async () => { await doSignIn(); if (cloudMod?.cloud?.user) draw(); };
       return;
     }
     if (!p.shared) {
-      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Everyone you send the join link to can add, edit and delete sources, notes and quotes in <b>${esc(p.name)}</b>. Their changes show up for you live. Folders and sorting stay personal.</p>
+      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Anyone with the link can add and edit sources, notes and quotes in <b>${esc(p.name)}</b>.</p>
         <button class="btn btn-primary" data-sh-create>${icon('users')} Create join link</button>`;
       $('[data-sh-create]', box).onclick = async e => {
         e.target.disabled = true;
-        try { await cloudMod.shareProject(p); draw(); toast('Group project created — send your group the link'); }
+        try { await cloudMod.shareProject(p); draw(); toast('Group project created. Send your group the link.'); }
         catch (err) { toast(cloudMod.friendlyError(err) || err.message, { error: true }); e.target.disabled = false; }
       };
       return;
@@ -320,17 +320,17 @@ async function openShare(projectId) {
     const isOwner = p.shared.owner === me;
     const link = cloudMod.joinLink(p.shared.id);
     const members = Object.entries(p.shared.members || {}).sort((a, b) => (b[1].role === 'owner') - (a[1].role === 'owner'));
-    box.innerHTML = `<p style="margin:0 0 8px;color:var(--text-2)">Send this link to your group. They sign in, open it, and they’re in.</p>
+    box.innerHTML = `<p style="margin:0 0 8px;color:var(--text-2)">Send this link to your group.</p>
       <div class="code-box"><span class="link-text">${esc(link)}</span><button class="btn btn-sm" data-sh-copy>${icon('copy')} Copy</button></div>
       <div class="menu-label" style="padding:16px 0 6px">Members (${members.length})</div>
       ${members.map(([uid, mm]) => `<div class="member"><span class="avatar">${esc((mm.name || '?')[0].toUpperCase())}</span><span class="t">${esc(mm.name)}${uid === me ? ' (you)' : ''}</span><span class="fmt">${mm.role === 'owner' ? 'Owner' : 'Editor'}</span>${isOwner && uid !== me ? `<button class="btn btn-sm btn-ghost" data-sh-remove="${esc(uid)}">Remove</button>` : ''}</div>`).join('')}
       <p style="font-size:12.5px;color:var(--muted);margin:14px 0 0">${isOwner
-        ? 'Anyone with the link can join. To stop sharing, use <b>Stop sharing</b> — everyone keeps their own copy of the sources.'
+        ? 'Anyone with the link can join. If you stop sharing, everyone keeps a copy.'
         : 'You can leave any time from the project’s ⋯ menu.'}</p>
       ${isOwner ? `<button class="btn btn-sm btn-danger" data-sh-stop style="margin-top:10px">Stop sharing</button>` : `<button class="btn btn-sm btn-danger" data-sh-leave style="margin-top:10px">Leave group</button>`}`;
     $('[data-sh-copy]', box).onclick = () => copyRich(esc(link), link).then(() => toast('Join link copied'));
     box.querySelectorAll('[data-sh-remove]').forEach(b => b.onclick = async () => {
-      if (!await confirmDialog({ title: 'Remove member?', message: 'They keep their own copy of the sources but won’t see new changes.', confirm: 'Remove', danger: true })) return;
+      if (!await confirmDialog({ title: 'Remove member?', message: 'They keep their own copy.', confirm: 'Remove', danger: true })) return;
       try { await cloudMod.removeMember(p, b.dataset.shRemove); delete p.shared.members[b.dataset.shRemove]; draw(); toast('Removed'); } catch (err) { toast(err.message, { error: true }); }
     });
     $('[data-sh-stop]', box)?.addEventListener('click', async () => { m.close(); await stopGroup(p.id, false); });
@@ -349,7 +349,7 @@ async function stopGroup(projectId, deleting) {
   const p = S.project(projectId);
   const ok = await confirmDialog({
     title: deleting ? 'Delete for everyone?' : 'Stop sharing?',
-    message: deleting ? `“${esc(p.name)}” stops being shared and is deleted for you. Members keep their own copies.` : `Members keep their own copy of the sources but won’t see changes any more. Yours becomes a normal project again.`,
+    message: deleting ? `“${esc(p.name)}” stops being shared and is deleted for you. Members keep their own copies.` : `Members keep their own copy.`,
     confirm: deleting ? 'Delete' : 'Stop sharing', danger: true,
   });
   if (!ok) return;
@@ -370,12 +370,12 @@ async function handleJoin() {
   if (!cloudMod.cloud.user) {
     if (joinPrompted) return;
     joinPrompted = true;
-    const m = openModal({ title: 'Join a group project', body: `<p style="margin:0 0 12px;color:var(--text-2)">You’ve been invited to work on a citemyshi project with your group. Sign in with Google to join.</p><button class="btn btn-primary" data-join-signin>${GOOGLE_G} Sign in and join</button>`, foot: '<span class="spacer"></span><button class="btn" data-close-btn>Not now</button>' });
+    const m = openModal({ title: 'Join a group project', body: `<p style="margin:0 0 12px;color:var(--text-2)">Sign in to join this group project.</p><button class="btn btn-primary" data-join-signin>${GOOGLE_G} Sign in and join</button>`, foot: '<span class="spacer"></span><button class="btn" data-close-btn>Not now</button>' });
     $('[data-close-btn]', m.el).onclick = () => m.close();
     $('[data-join-signin]', m.el).onclick = async () => { m.close(); await doSignIn(); };
     return;
   }
-  try { const p = await cloudMod.joinShared(pendingJoin); toast(`Joined “${p.name}” — changes you make are shared with the group`); }
+  try { const p = await cloudMod.joinShared(pendingJoin); toast(`Joined “${p.name}”`); }
   catch (e) { toast(e.message, { error: true, duration: 9000 }); }
   joinDone = true;
 }
@@ -389,7 +389,7 @@ async function openConnect(projectId) {
   const box = $('#cx', m.el);
   const draw = async () => {
     if (!cloudMod?.cloud?.user) {
-      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">The Word and Google Docs add-ins read <b>${esc(p.name)}</b> through a private connection code. Sign in first so it can be shared securely — it stays in sync as you add sources.</p>
+      box.innerHTML = `<p style="margin:0 0 12px;color:var(--text-2)">Sign in to get a connection code for the Word and Google Docs add-ins.</p>
         <button class="btn btn-primary" data-cx-signin>${GOOGLE_G} Sign in with Google</button>`;
       $('[data-cx-signin]', box).onclick = async () => { await doSignIn(); if (cloudMod?.cloud?.user) draw(); };
       return;
@@ -399,9 +399,9 @@ async function openConnect(projectId) {
       const code = await cloudMod.connectProject(p);
       box.innerHTML = `<p style="margin:0 0 10px;color:var(--text-2)">Enter this code in the citemyshi add-in in <b>Word</b> (References → Citations) or <b>Google Docs</b> (citemyshi menu).</p>
         <div class="code-box"><span class="code">${esc(cloudMod.formatCode(code))}</span><button class="btn btn-sm" data-cx-copy>${icon('copy')} Copy</button></div>
-        <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Anyone with this code can read this project’s sources (not edit them). New sources and style changes reach the add-in automatically. <button class="link" data-cx-stop style="background:none;border:0;color:var(--danger);font-weight:600;padding:0;font-size:12.5px">Turn off this code</button></p>`;
+        <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0">Anyone with this code can read (not edit) this project. <button class="link" data-cx-stop style="background:none;border:0;color:var(--danger);font-weight:600;padding:0;font-size:12.5px">Turn off this code</button></p>`;
       $('[data-cx-copy]', box).onclick = () => copyRich(esc(cloudMod.formatCode(code)), cloudMod.formatCode(code)).then(() => toast('Code copied'));
-      $('[data-cx-stop]', box).onclick = async () => { await cloudMod.disconnectProject(p); toast('Code turned off — the add-ins can no longer read this project'); m.close(); };
+      $('[data-cx-stop]', box).onclick = async () => { await cloudMod.disconnectProject(p); toast('Code turned off'); m.close(); };
     } catch (e) { box.innerHTML = `<div class="notice warn">${icon('alert')}<div>${esc(cloudMod.friendlyError(e) || e.message)}</div></div>`; }
   };
   draw();
@@ -442,7 +442,7 @@ function renderCiteCard() {
         <button class="link" data-pdf>${icon('doc')} Cite a PDF</button>
         <button class="link" data-manual>${icon('pencil')} Cite manually</button>
         <button class="link" data-import>${icon('upload')} Import</button>
-        <button class="link" data-cite-button title="Cite any page you can open — even ones that block citation tools">${icon('quote')} Cite button</button>
+        <button class="link" data-cite-button title="Cite any page from your browser">${icon('quote')} Cite button</button>
       </span>
     </div>
     <div id="citeResults">${renderResults()}</div>`;
@@ -452,22 +452,23 @@ function renderCiteCard() {
 function detectKind(q) {
   const s = q.trim();
   if (!s) return null;
-  if (/^(https?:\/\/)?(dx\.)?doi\.org\/10\.|^(doi:\s*)?10\.\d{4,9}\/\S+$/i.test(s)) return ['journal', 'DOI — press Enter to cite the article'];
+  if (/^(https?:\/\/)?(dx\.)?doi\.org\/10\.|^(doi:\s*)?10\.\d{4,9}\/\S+$/i.test(s)) return ['journal', 'DOI. Press Enter.'];
   if (/^https?:\/\/|^www\.|^[a-z0-9-]+(\.[a-z0-9-]+)+\/\S*$/i.test(s)) {
-    if (/austlii|jade\.io|legislation\./i.test(s)) return ['law', 'Legal database link — press Enter'];
-    if (/youtu\.?be|vimeo|ted\.com/i.test(s)) return ['video', 'Video link — press Enter'];
-    return ['globe', 'Website link — press Enter and we’ll scan the page'];
+    if (/austlii|jade\.io|legislation\./i.test(s)) return ['law', 'Legal database link. Press Enter.'];
+    if (/youtu\.?be|vimeo|ted\.com/i.test(s)) return ['video', 'Video link. Press Enter.'];
+    if (/chatgpt\.com|chat\.openai|gemini\.google|copilot\.microsoft|claude\.ai\/share|perplexity\.ai/i.test(s)) return ['chat', 'AI chat link. Press Enter.'];
+    return ['globe', 'Website link. Press Enter.'];
   }
-  if (/^(isbn(-1[03])?:?\s*)?(97[89][\d -]{10,14}|[\d -]{9,12}[\dXx])$/i.test(s) && s.replace(/\D/g, '').length >= 9) return ['book', 'ISBN — press Enter to cite the book'];
-  if (/^pmid:?\s*\d+$/i.test(s)) return ['journal', 'PubMed ID — press Enter'];
-  if (/^(arxiv:\s*)?\d{4}\.\d{4,5}(v\d+)?$/i.test(s)) return ['journal', 'arXiv preprint — press Enter'];
-  if (/\b(Act|Regulations?|Rules|Ordinance|Code|Bill)\s+\d{4}\b/.test(s)) return ['law', 'Legislation — press Enter (add a pinpoint like s 9 later in the footnote)'];
-  if (/\s\[\d{4}\]\s+[A-Z]|\(\d{4}\)\s+\d+\s+[A-Z]/.test(s)) return ['law', 'Court case — press Enter'];
-  return ['search', 'Searching books and journal articles as you type — pick a result or press Enter for more'];
+  if (/^(isbn(-1[03])?:?\s*)?(97[89][\d -]{10,14}|[\d -]{9,12}[\dXx])$/i.test(s) && s.replace(/\D/g, '').length >= 9) return ['book', 'ISBN. Press Enter.'];
+  if (/^pmid:?\s*\d+$/i.test(s)) return ['journal', 'PubMed ID. Press Enter.'];
+  if (/^(arxiv:\s*)?\d{4}\.\d{4,5}(v\d+)?$/i.test(s)) return ['journal', 'arXiv ID. Press Enter.'];
+  if (/\b(Act|Regulations?|Rules|Ordinance|Code|Bill)\s+\d{4}\b/.test(s)) return ['law', 'Legislation. Press Enter.'];
+  if (/\s\[\d{4}\]\s+[A-Z]|\(\d{4}\)\s+\d+\s+[A-Z]/.test(s)) return ['law', 'Court case. Press Enter.'];
+  return ['search', 'Searching books and articles. Press Enter for more.'];
 }
 function hintFor(q) {
   const k = detectKind(q || '');
-  if (!k) return 'Paste a link, DOI, ISBN, PubMed or arXiv ID, an Act or case — or start typing a title. <span class="kbd">/</span> to focus';
+  if (!k) return '';
   return `${icon(k[0])} ${esc(k[1])}`;
 }
 
@@ -562,7 +563,7 @@ function afterAdd(added) {
 // Dropped/uploaded PDFs: find the DOI, arXiv ID, ISBN or title, then look it up
 async function citePdfs(files) {
   const pdfs = files.filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
-  if (!pdfs.length) return toast('That isn’t a PDF — drop a .pdf file', { error: true });
+  if (!pdfs.length) return toast('That isn’t a PDF.', { error: true });
   for (const file of pdfs) {
     ui.loading = true; ui.loadingKind = 'item'; renderCiteCard();
     try {
@@ -572,13 +573,13 @@ async function citePdfs(files) {
         try { const r = await api(`/api/cite?q=${encodeURIComponent(q)}`); if (r.mode === 'item') { found = r.item; source = r.source; break; } } catch {}
       }
       if (!found && info.title) {
-        try { const r = await api(`/api/match-title?title=${encodeURIComponent(info.title)}`); if (r.item) { found = r.item; source = 'DOI'; warnings = [`Matched “${file.name}” to a published work by its title — check it’s the same one.`]; } } catch {}
+        try { const r = await api(`/api/match-title?title=${encodeURIComponent(info.title)}`); if (r.item) { found = r.item; source = 'DOI'; warnings = [`Matched “${file.name}” by its title. Check it’s the same work.`]; } } catch {}
       }
       if (!found) {
         const [given, ...rest] = (info.author || '').split(/\s+/).reverse();
         found = { type: 'report', title: info.title, ...(info.author ? { author: [rest.length ? { given: rest.reverse().join(' '), family: given } : { literal: info.author }] } : {}), ...(info.year ? { issued: { 'date-parts': [[+info.year]] } } : {}) };
         source = 'PDF';
-        warnings = [`We couldn’t find “${file.name}” online, so we read what we could from the file. Fill in the author, date and publisher — and pick the right source type.`];
+        warnings = [`Couldn’t find “${file.name}” online. Fill in the missing details.`];
       }
       ui.loading = false; renderCiteCard();
       await new Promise(resolve => {
@@ -705,6 +706,20 @@ function linkify(html) {
   return html.replace(/(^|[\s>(])(https?:\/\/[^\s<]+?)(?=[.,;)]?(?:\s|<|$))/g, (m, pre, url) => `${pre}<a href="${url.replace(/&amp;/g, '&').replace(/"/g, '%22')}" target="_blank" rel="noopener">${url}</a>`);
 }
 
+// One in-text citation for several sources, in the order the style wants
+async function citeTogether(items) {
+  const p = active();
+  const m = openModal({ title: `Cite ${items.length} sources together`, body: '<div id="cluster-out"><div class="skel"><div style="width:50%"></div></div></div>', foot: '<span class="spacer"></span><button class="btn" data-done>Done</button>' });
+  $('[data-done]', m.el).onclick = () => m.close();
+  try {
+    const r = await formatCluster({ items: p.items, ids: items.map(i => i.id), style: p.style, lang: p.lang });
+    const out = $('#cluster-out', m.el);
+    out.innerHTML = `<div class="intext-row"><span class="lbl">${r.isNote ? 'Footnote' : 'Citation'}</span><span class="val">${r.paren}</span><button class="btn btn-sm" data-copy-cluster>${icon('copy')} Copy</button></div>
+      <p style="color:var(--muted);font-size:12.5px;margin:12px 0 0">${r.isNote ? 'Use this as one footnote.' : 'In ' + esc(p.styleTitle || p.style) + ' order.'}</p>`;
+    $('[data-copy-cluster]', out).onclick = async e => { const tmp = document.createElement('div'); tmp.innerHTML = r.paren; await copyRich(r.paren, tmp.textContent); e.currentTarget.innerHTML = `${icon('check')} Copied`; };
+  } catch (e) { $('#cluster-out', m.el).innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; }
+}
+
 function citeHtml(item) {
   const p = active();
   const f = ui.fmt?.projectId === p.id ? ui.fmt.byId.get(item.id) : null;
@@ -726,11 +741,11 @@ function citeHtml(item) {
           ${sourceBadge(item)}
           ${intext ? `<span class="intext-preview">· ${ui.fmt.style.isNote ? 'Note' : 'In-text'}: ${intext.replace(/<[^>]+>/g, '')}</span>` : ''}
           ${missing.length ? `<button class="warn-pill" data-edit title="Missing: ${esc(missing.join(', '))}">${icon('alert')} Missing ${esc(missing.slice(0, 2).join(', ').toLowerCase())}${missing.length > 2 ? ` +${missing.length - 2}` : ''}</button>` : ''}
-          ${!missing.length && !item._checked && checks.length ? `<button class="warn-pill" data-edit title="${esc(checks.join(' · '))}">${icon('alert')} ${esc(checks[0].split(' — ')[0])}</button>` : ''}
+          ${!missing.length && !item._checked && checks.length ? `<button class="warn-pill" data-edit title="${esc(checks.join(' · '))}">${icon('alert')} ${esc(checks[0])}</button>` : ''}
           ${(item._tags || []).map(tg => `<button class="chip" style="${tagColor(tg)}" data-tag-filter="${esc(tg)}">${esc(tg)}</button>`).join('')}
         </div>
         ${ui.editingNote === item.id
-          ? `<div class="note-edit"><textarea data-note-input placeholder="Write a note — key quotes, page numbers, why it matters…">${esc(item._note || '')}</textarea><div class="row"><button class="btn btn-sm" data-note-cancel>Cancel</button><button class="btn btn-sm btn-primary" data-note-save>Save note</button></div></div>`
+          ? `<div class="note-edit"><textarea data-note-input placeholder="Write a note…">${esc(item._note || '')}</textarea><div class="row"><button class="btn btn-sm" data-note-cancel>Cancel</button><button class="btn btn-sm btn-primary" data-note-save>Save note</button></div></div>`
           : item._note ? `<div class="note" data-note title="Click to edit note">${icon('note')}<span>${esc(item._note)}</span></div>` : ''}
         ${quotesHtml(item, ui.openQuotes.has(item.id))}
       </div>
@@ -759,7 +774,6 @@ function renderBib() {
     listHtml = `<div class="empty">
       <div class="empty-art">${icon('quote')}</div>
       <h3>No citations yet</h3>
-      <p>Paste a link to any website, article or video above — or search for a book or journal article. We’ll grab the author, date, publisher and everything else for you.</p>
       <div class="examples">
         <button class="btn btn-sm" data-example="https://en.wikipedia.org/wiki/Citation">${icon('globe')} Try a website</button>
         <button class="btn btn-sm" data-example="9780141439518">${icon('book')} Try an ISBN</button>
@@ -767,9 +781,9 @@ function renderBib() {
         <button class="btn btn-sm" data-example="Corporations Act 2001 (Cth)">${icon('law')} Try an Act</button>
       </div>
       <div class="study-pick">
-        <div class="study-q">${icon('grad')} What are you studying? We’ll set the style most courses in that area use.</div>
+        <div class="study-q">${icon('grad')} What are you studying?</div>
         <div class="examples">${DEGREES.map(d => `<button class="chip deg-chip ${p.style === d.styles[0][0] ? 'active' : ''}" data-degree="${d.id}">${esc(d.label)}</button>`).join('')}</div>
-        <div class="study-note">Always check your unit guide — some courses ask for a specific style. Current style: <b>${esc(p.styleTitle || p.style)}</b>.</div>
+        <div class="study-note">Style: <b>${esc(p.styleTitle || p.style)}</b>. Check your unit guide.</div>
       </div>
     </div>`;
   } else if (!items.length) {
@@ -792,7 +806,7 @@ function renderBib() {
       <h2>${icon('layers')} ${esc(heading)} ${ui.formatting ? '<span class="spinner" style="width:13px;height:13px;color:var(--muted)"></span>' : ''}</h2>
       <span class="spacer"></span>
       ${p.items.length ? `
-        <button class="btn btn-sm btn-ghost" data-planner title="Footnotes in essay order — Ibid, short forms, numbering">${icon('layers')} <span class="hide-sm">${ui.fmt?.style?.isNote ? 'Footnotes' : 'Citation order'}</span></button>
+        <button class="btn btn-sm btn-ghost" data-planner title="Footnotes in essay order">${icon('layers')} <span class="hide-sm">${ui.fmt?.style?.isNote ? 'Footnotes' : 'Citation order'}</span></button>
         <button class="btn btn-sm btn-ghost" data-paper-check title="Check your essay's in-text citations against this bibliography">${icon('check')} <span class="hide-sm">Check paper</span></button>
         <button class="btn btn-sm" data-copy-all>${icon('copy')} Copy all</button>
         <button class="btn btn-sm btn-primary" data-export>${icon('download')} Export ${icon('chevronDown')}</button>` : ''}
@@ -803,26 +817,27 @@ function renderBib() {
       ${selCount ? `
         <span class="sel-count">${selCount} selected</span>
         <button class="btn btn-sm" data-sel-copy>${icon('copy')} Copy</button>
+        ${selCount > 1 ? `<button class="btn btn-sm" data-sel-cite title="One citation for all of them, e.g. (Adams, 2019; Brown, 2020)">${icon('quote')} <span class="hide-sm">Cite together</span></button>` : ''}
         <button class="btn btn-sm" data-sel-move>${icon('folderMove')} Move / copy to…</button>
         <button class="btn btn-sm" data-sel-tag>${icon('tag')} Tag</button>
-        <button class="btn btn-sm" data-sel-case title="Only the first word and names capitalised — what APA, Harvard and Vancouver require">${icon('type')} <span class="hide-sm">Sentence-case titles</span></button>
+        <button class="btn btn-sm" data-sel-case title="For APA, Harvard and Vancouver">${icon('type')} <span class="hide-sm">Sentence-case titles</span></button>
         <button class="btn btn-sm" data-sel-export>${icon('download')} Export</button>
         <button class="btn btn-sm btn-danger" data-sel-delete>${icon('trash')} Delete</button>
         <span class="spacer"></span>
         <button class="btn btn-sm btn-ghost" data-sel-clear>Clear</button>
       ` : `
         <div class="filter-input">${icon('search')}<input placeholder="Filter citations…" value="${esc(ui.filter)}" data-filter></div>
-        ${incomplete ? `<button class="btn btn-sm fix-btn" data-fix-all ${ui.fixing ? 'disabled' : ''} title="Look up missing details automatically">${ui.fixing ? `<span class="spinner" style="width:12px;height:12px"></span> Fixing ${ui.fixing}` : `${icon('sparkles')} Fix ${incomplete} incomplete`}</button>` : ''}
+        ${incomplete ? `<button class="btn btn-sm fix-btn" data-fix-all ${ui.fixing ? 'disabled' : ''} title="Fill in missing details">${ui.fixing ? `<span class="spinner" style="width:12px;height:12px"></span> Fixing ${ui.fixing}` : `${icon('search')} Fix ${incomplete} incomplete`}</button>` : ''}
         <span class="spacer"></span>
         <button class="btn btn-sm btn-ghost" data-sort>${icon('sort')} <span class="hide-sm">${esc(SORT_LABELS[p.sort] || SORT_LABELS.style)}</span></button>
         <button class="btn btn-sm btn-ghost" data-group>${icon('layers')} <span class="hide-sm">${p.group && p.group !== 'none' ? `By ${GROUP_LABELS[p.group].toLowerCase()}` : 'Group'}</span></button>
       `}
     </div>
-    ${ui.incompleteOnly ? `<div class="tagbar">${icon('alert')}<span class="lbl" style="color:var(--warn)">Showing ${incomplete} citation${incomplete === 1 ? '' : 's'} that need${incomplete === 1 ? 's' : ''} details — click one to fill it in.</span><button class="btn btn-sm btn-ghost" data-clear-filters>Show all</button></div>` : ''}
+    ${ui.incompleteOnly ? `<div class="tagbar">${icon('alert')}<span class="lbl" style="color:var(--warn)">Showing ${incomplete} citation${incomplete === 1 ? '' : 's'} that need${incomplete === 1 ? 's' : ''} details.</span><button class="btn btn-sm btn-ghost" data-clear-filters>Show all</button></div>` : ''}
     ${tags.length ? `<div class="tagbar"><span class="lbl">${icon('tag')} Tags:</span>${tags.map(([tg, n]) => `<button class="chip ${ui.tagFilter === tg ? 'active' : ''}" style="${tagColor(tg)}" data-tag-filter="${esc(tg)}">${esc(tg)} <span style="opacity:.7">${n}</span></button>`).join('')}${ui.tagFilter ? `<button class="btn btn-sm btn-ghost" data-clear-filters>Show all</button>` : ''}</div>` : ''}
     ` : ''}
     <div class="list" style="${p.items.length ? '' : 'border-radius:12px'}">${listHtml}</div>
-    ${p.items.length ? `<div class="bib-foot"><span>${items.length === p.items.length ? `${p.items.length} citation${p.items.length === 1 ? '' : 's'}` : `Showing ${items.length} of ${p.items.length}`} · ${esc(p.styleTitle || p.style)}</span><span>Drag citations onto a project in the sidebar to move them (hold <span class="kbd">Alt</span> to copy)</span></div>` : ''}`;
+    ${p.items.length ? `<div class="bib-foot"><span>${items.length === p.items.length ? `${p.items.length} citation${p.items.length === 1 ? '' : 's'}` : `Showing ${items.length} of ${p.items.length}`} · ${esc(p.styleTitle || p.style)}</span></div>` : ''}`;
   ui.flash = null;
 }
 
@@ -873,7 +888,7 @@ const bibTextFor = items => bibSections(items).map(([heading, list]) => [heading
 async function copyItems(items, label = 'Copied to clipboard') {
   if (!ui.fmt) return;
   const ok = await copyRich(bibHtmlFor(items), bibTextFor(items));
-  toast(ok ? label : 'Couldn’t copy — try again', { error: !ok });
+  toast(ok ? label : 'Couldn’t copy. Try again.', { error: !ok });
 }
 
 function exportMenu(anchor, items) {
@@ -887,13 +902,13 @@ function exportMenu(anchor, items) {
     { label: 'Documents', heading: true },
     { label: 'Word document (.docx)', icon: 'file', onClick: async () => {
       try {
-        if (!ui.fmt) throw new Error('Still formatting — try again in a second');
+        if (!ui.fmt) throw new Error('Still formatting. Try again in a second.');
         const entries = bibSections(items).flatMap(([heading, list]) => [...(heading ? [{ heading }] : []), ...list.map(i => ui.fmt.byId.get(i.id)).filter(e => e && e.inBibliography !== false).map(e => ({ html: e.html }))]);
         const res = await api('/api/export/docx', { body: { entries, params: ui.fmt.params, style: p.style, title: headingFor(p.style), filename: name }, raw: true });
         download(`${name}.docx`, await res.blob());
       } catch (e) { toast(e.message, { error: true }); }
     } },
-    { label: 'Google Docs (copy & paste)', icon: 'copy', onClick: () => copyItems(items, 'Copied — paste into Google Docs') },
+    { label: 'Google Docs (copy & paste)', icon: 'copy', onClick: () => copyItems(items, 'Copied. Paste into Google Docs.') },
     { label: 'Plain text (.txt)', icon: 'doc', onClick: () => download(`${name}.txt`, `${headingFor(p.style)}\n\n${bibTextFor(items)}\n`) },
     { label: 'Web page (.html)', icon: 'globe', onClick: () => download(`${name}.html`, `<!doctype html><meta charset="utf-8"><title>${esc(p.name)}</title><body style="max-width:7in;margin:1in auto"><h1 style="text-align:center;font:bold 12pt 'Times New Roman',serif">${esc(headingFor(p.style))}</h1>${bibHtmlFor(items)}</body>`, 'text/html') },
     { label: 'Print / save as PDF', icon: 'printer', onClick: () => printItems(items) },
@@ -901,7 +916,7 @@ function exportMenu(anchor, items) {
     { label: 'Reference managers', heading: true },
     { label: 'BibTeX (.bib)', icon: 'code', onClick: () => viaServer('bibtex', 'bib', 'application/x-bibtex') },
     { label: 'BibLaTeX (.bib)', icon: 'code', onClick: () => viaServer('biblatex', 'bib', 'application/x-bibtex') },
-    { label: 'RIS — Zotero, EndNote, Mendeley', icon: 'data', onClick: () => viaServer('ris', 'ris', 'application/x-research-info-systems') },
+    { label: 'RIS (Zotero, EndNote, Mendeley)', icon: 'data', onClick: () => viaServer('ris', 'ris', 'application/x-research-info-systems') },
     { label: 'CSL-JSON', icon: 'code', onClick: () => viaServer('csl', 'json', 'application/json') },
   ], { align: 'right' });
 }
@@ -1004,7 +1019,7 @@ async function sentenceCaseItems(items) {
   } catch (e) { toast(e.message, { error: true }); }
   p.updatedAt = Date.now();
   S.emit({ project: true, format: true, projects: true });
-  toast(changed ? `Sentence-cased ${changed} title${changed === 1 ? '' : 's'} — check names stayed capitalised` : 'Those titles are already in sentence case');
+  toast(changed ? `Sentence-cased ${changed} title${changed === 1 ? '' : 's'}. Check names kept their capitals.` : 'Those titles are already in sentence case');
 }
 
 function startNote(id) {
@@ -1031,7 +1046,7 @@ function wireBib() {
       const [name, title] = deg.styles[0];
       S.updateProject(p.id, { style: name, styleTitle: title });
       state.styleTab = deg.id; S.save();
-      toast(`${deg.label}: set to ${title} — the most common style for ${deg.label.toLowerCase()}. Other options are under “Citation style”.`, { duration: 6000 });
+      toast(`Style set to ${title}`);
       return;
     }
     if ('select' in d) { el.checked ? ui.selected.add(id) : ui.selected.delete(id); renderBib(); return; }
@@ -1066,7 +1081,7 @@ function wireBib() {
         renderBib();
         const msg = r.fixed ? `Filled in ${r.fixed} citation${r.fixed === 1 ? '' : 's'}` : 'Couldn’t find anything new automatically';
         if (r.still) toast(`${msg} · ${r.still} still need${r.still === 1 ? 's' : ''} your input`, { action: { label: 'Show them', fn: () => { ui.incompleteOnly = true; renderBib(); } }, duration: 7000 });
-        else toast(`${msg} — everything’s complete`);
+        else toast(`${msg}. All complete.`);
       });
       return;
     }
@@ -1076,6 +1091,7 @@ function wireBib() {
     if ('group' in d) return openMenu(el, Object.entries(GROUP_LABELS).map(([k, l]) => ({ label: l, checked: (p.group || 'none') === k, onClick: () => S.updateProject(p.id, { group: k }) })), { align: 'right' });
     if ('selClear' in d) { ui.selected.clear(); renderBib(); return; }
     if ('selCopy' in d) return copyItems(selectedItems(), `Copied ${selectedItems().length} citations`);
+    if ('selCite' in d) return citeTogether(selectedItems());
     if ('selExport' in d) return exportMenu(el, selectedItems());
     if ('selMove' in d) return moveItems(selectedItems().map(i => i.id));
     if ('selTag' in d) return tagItems(selectedItems().map(i => i.id));
@@ -1163,7 +1179,7 @@ import('./cloud.js').then(m => {
 
 // Opened by the Cite button on another page
 listenForPage(async page => {
-  const busy = toast('Reading the page you were on…', { duration: 30000 });
+  const busy = toast('Reading page…', { duration: 30000 });
   try {
     const r = await api('/api/cite-page', { body: page });
     busy?.();

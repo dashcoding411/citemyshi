@@ -13,7 +13,7 @@ const call = (fn, ...args) => new Promise((resolve, reject) => {
   const id = ++seq;
   pending.set(id, { resolve, reject });
   window.parent.postMessage({ cms: true, id, fn, args }, '*');
-  setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error('Google Docs didn’t respond — close and reopen the citemyshi sidebar.')); } }, 60000);
+  setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error('Google Docs didn’t respond. Reopen the sidebar.')); } }, 60000);
 });
 
 export async function createHost() {

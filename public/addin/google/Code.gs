@@ -63,7 +63,7 @@ function insertAtCursor(args) {
     styleRun_(t, off, off + args.text.length - 1, url, args.italics);
   } else {
     var inserted = cursor.insertText(args.text);
-    if (!inserted) throw new Error('Couldn’t insert here — click inside a paragraph and try again.');
+    if (!inserted) throw new Error('Click inside a paragraph and try again.');
     styleRun_(inserted, 0, args.text.length - 1, url, args.italics);
   }
   return true;
@@ -105,7 +105,7 @@ function readCitations(isNote) {
 
 function updateCitations(isNote, results) {
   var found = collect_(isNote);
-  if (found.length !== results.length) throw new Error('The document changed while updating — click Update citations again.');
+  if (found.length !== results.length) throw new Error('The document changed. Click Update citations again.');
   // Work backwards so earlier positions in the same paragraph stay valid
   for (var k = found.length - 1; k >= 0; k--) {
     var c = found[k], r = results[k];

@@ -37,8 +37,8 @@ export function openPlanner() {
     title: isNoteGuess ? 'Footnote planner' : 'Citations in your essay',
     wide: true,
     body: `<p class="planner-intro">${isNoteGuess
-      ? 'Add a row for each footnote, in the order they appear in your essay. We’ll write every footnote correctly — the first in full, then <b>Ibid</b> and short forms like <b>(n 3)</b> — so you can copy them straight into Word or Google Docs.'
-      : 'Add each citation in the order it appears in your essay. Numbered styles (IEEE, Vancouver…) number sources by first mention, so this gives you the right numbers and the reference list in order.'}</p>
+      ? 'Add your footnotes in essay order. Ibid and short forms are handled for you.'
+      : 'Add your citations in essay order to get the right numbers.'}</p>
       <div class="planner">
         <div class="planner-rows" id="pl-rows"></div>
         <button class="btn btn-sm" data-pl-add>${icon('plus')} Add ${isNoteGuess ? 'footnote' : 'citation'}</button>
@@ -64,7 +64,7 @@ export function openPlanner() {
           <button class="icon-btn" data-pl-del="${i}" title="Remove">${icon('x')}</button>
         </span>
       </div>`;
-    }).join('') : `<div class="results-empty" style="padding:14px">No ${isNoteGuess ? 'footnotes' : 'citations'} yet — click “Add”.</div>`;
+    }).join('') : `<div class="results-empty" style="padding:14px">No ${isNoteGuess ? 'footnotes' : 'citations'} yet.</div>`;
   }
 
   const run = debounce(async () => {

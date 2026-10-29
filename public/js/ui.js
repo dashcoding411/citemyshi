@@ -17,7 +17,7 @@ let wakeNotice = null;
 // up or the network blips, and tells the user if it's taking a while.
 export async function api(path, { method, body, raw, retries = 2 } = {}) {
   const slow = setTimeout(() => {
-    if (API_BASE && !wakeNotice) wakeNotice = toast('Waking up the citation server — the first request can take up to 30 seconds…', { duration: 60000 });
+    if (API_BASE && !wakeNotice) wakeNotice = toast('Starting up. This can take up to 30 seconds…', { duration: 60000 });
   }, 4000);
   try {
     for (let attempt = 0; ; attempt++) {
@@ -30,12 +30,12 @@ export async function api(path, { method, body, raw, retries = 2 } = {}) {
         });
       } catch {
         if (attempt < retries) { await sleep(1500 * (attempt + 1)); continue; }
-        throw new Error('Can’t reach the citation server. Check your internet connection and try again.');
+        throw new Error('Can’t connect. Check your internet.');
       }
       if ([502, 503, 504].includes(res.status) && attempt < retries) { await sleep(2500 * (attempt + 1)); continue; }
       if (raw) { if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Error ${res.status}`); return res; }
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || (res.status >= 500 ? 'The citation server had a problem — try again in a moment.' : `Error ${res.status}`));
+      if (!res.ok) throw new Error(data.error || (res.status >= 500 ? 'Something went wrong. Try again.' : `Error ${res.status}`));
       return data;
     }
   } finally {

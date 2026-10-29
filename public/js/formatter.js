@@ -15,7 +15,7 @@ function getWorker() {
   };
   worker.onerror = e => {
     e.preventDefault?.();
-    for (const p of pending.values()) p.reject(new Error('Citation formatting stopped unexpectedly — try again.'));
+    for (const p of pending.values()) p.reject(new Error('Formatting stopped. Try again.'));
     pending.clear();
     worker.terminate();
     worker = null; // next call starts a fresh worker
@@ -34,5 +34,6 @@ function call(op, args) {
 export const formatBibliography = args => call('format', args);
 export const formatSample = args => call('sample', args);
 export const formatInText = args => call('intext', args);
+export const formatCluster = args => call('cluster', args);
 export const styleInfo = name => call('styleInfo', { style: name });
 export const formatDocument = args => call('document', args);

@@ -63,7 +63,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
     const extras = [...t.extra, ...extraWithValues];
 
     m.body.innerHTML = `
-      ${source ? `<div class="notice ${warnings.length ? 'warn' : 'ok'}">${icon(warnings.length ? 'alert' : 'sparkles')}<div>${warnings.length ? warnings.map(esc).join('<br>') : `We found this ${source === 'URL' ? 'from the link' : `using <b>${esc(source)}</b>`}. Give it a quick check below.`}${source === 'URL' || source === 'Web archive' ? `<br><button class="link" data-open-cite-button style="margin-top:6px">${icon('quote')} Get the exact details with the Cite button</button> — it reads the page in your own browser.` : ''}</div></div>` : ''}
+      ${source ? `<div class="notice ${warnings.length ? 'warn' : 'ok'}">${icon(warnings.length ? 'alert' : 'check')}<div>${warnings.length ? warnings.map(esc).join('<br>') : `${{ URL: 'Guessed from the link', Webpage: 'Read from the page', PDF: 'Read from the PDF', Manual: 'Entered by hand' }[source] || `Found via <b>${esc(source)}</b>`}. Check the details.`}${source === 'URL' || source === 'Web archive' ? `<br><button class="link" data-open-cite-button style="margin-top:6px">${icon('quote')} Use the Cite button instead</button>` : ''}</div></div>` : ''}
       <div class="preview-box">
         <div class="lbl"><span>Preview · ${esc(p.styleTitle || p.style)}</span><span class="pv-status"></span></div>
         <div class="csl pv-html ${state.serif ? 'serif' : ''}"><span style="color:var(--muted)">Generating…</span></div>
@@ -97,7 +97,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
 
       <div class="form-section">
         <h3>Notes &amp; tags</h3>
-        <div class="field wide" style="margin-bottom:12px"><label for="ed-note">${icon('note')} Note <span style="font-weight:400;color:var(--muted)">— private, or shown as the annotation in annotated-bibliography styles</span></label>
+        <div class="field wide" style="margin-bottom:12px"><label for="ed-note">${icon('note')} Note <span style="font-weight:400;color:var(--muted)">(private)</span></label>
           <textarea class="input" id="ed-note" rows="3" placeholder="Why this source matters, key quotes, page numbers…">${esc(w._note || '')}</textarea></div>
         <div class="field wide"><label>${icon('tag')} Tags</label>
           <div class="tag-input" id="ed-tags">${(w._tags || []).map(tg => `<span class="chip" style="${tagColor(tg)}">${esc(tg)}<span class="x" data-rm-tag="${esc(tg)}" role="button" aria-label="Remove tag">${icon('x')}</span></span>`).join('')}<input placeholder="Add a tag and press Enter" list="ed-tag-list"></div>

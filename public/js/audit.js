@@ -16,10 +16,10 @@ export function sourceBadge(item) {
   if (!s) return '';
   if (VERIFIED.has(s)) return `<span class="src-pill ok" title="Details came from ${esc(s)}">${icon('check')} Verified · ${esc(s === 'book search' ? 'book database' : s)}</span>`;
   if (item._checked) return `<span class="src-pill ok" title="You reviewed and saved these details">${icon('check')} Checked by you</span>`;
-  if (SCANNED.has(s)) return `<span class="src-pill" title="Read from the page’s own metadata — worth a quick check">${icon('globe')} Scanned from ${s === 'PDF' ? 'PDF' : 'page'}</span>`;
-  if (s === 'URL') return `<span class="src-pill warn" title="The page couldn’t be opened, so details were guessed from the link">${icon('link')} Guessed from link</span>`;
-  if (s === 'Web archive') return `<span class="src-pill" title="The site blocks automated reading, so details came from the Internet Archive’s copy of the page">${icon('globe')} Read from archived copy</span>`;
-  if (s === 'legal database' || s === 'legal citation') return `<span class="src-pill ok" title="Read from the legal database or the citation you typed">${icon('check')} ${s === 'legal database' ? 'Legal database' : 'From the citation'}</span>`;
+  if (SCANNED.has(s)) return `<span class="src-pill" title="Read from the page. Check the details.">${icon('globe')} Scanned from ${s === 'PDF' ? 'PDF' : 'page'}</span>`;
+  if (s === 'URL') return `<span class="src-pill warn" title="Guessed from the link. Check the details.">${icon('link')} Guessed from link</span>`;
+  if (s === 'Web archive') return `<span class="src-pill" title="From the Internet Archive’s copy">${icon('globe')} Read from archived copy</span>`;
+  if (s === 'legal database' || s === 'legal citation') return `<span class="src-pill ok" title="From the legal database or your citation">${icon('check')} ${s === 'legal database' ? 'Legal database' : 'From the citation'}</span>`;
   if (s === 'Imported') return `<span class="src-pill">${icon('upload')} Imported</span>`;
   return `<span class="src-pill">${icon('pencil')} Entered manually</span>`;
 }
@@ -157,8 +157,8 @@ export function openPaperCheck(getFmt) {
     out.innerHTML = `
       <div class="notice ${ok ? 'ok' : 'warn'}">${icon(ok ? 'check' : 'alert')}<div>
         Found <b>${r.found}</b> in-text citation${r.found === 1 ? '' : 's'}${r.numeric ? ' (numbered style)' : ''}. ${r.cited} of ${active().items.length} sources are cited.
-        ${ok ? ' Everything matches — nice work.' : ''}</div></div>
-      ${r.found === 0 ? `<div class="notice info">${icon('info')}<div>No citations detected. Make sure they look like <b>(Smith, 2020)</b>, <b>Smith (2020)</b>, <b>(Smith 23)</b> or <b>[1]</b>.</div></div>` : ''}
+        ${ok ? ' Everything matches.' : ''}</div></div>
+      ${r.found === 0 ? `<div class="notice info">${icon('info')}<div>No citations found. They should look like <b>(Smith, 2020)</b>, <b>(Smith 23)</b> or <b>[1]</b>.</div></div>` : ''}
       ${r.missing.length ? `<div class="form-section"><h3>Cited in your paper, but not in your bibliography (${r.missing.length})</h3>
         ${r.missing.map(x => `<div class="intext-row"><span class="val">${esc(x)}</span></div>`).join('')}</div>` : ''}
       ${r.uncited.length ? `<div class="form-section"><h3>In your bibliography, but never cited (${r.uncited.length})</h3>
