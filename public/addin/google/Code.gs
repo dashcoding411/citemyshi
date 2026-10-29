@@ -51,9 +51,9 @@ function styleRun_(text, start, end, url, italics) {
 function insertAtCursor(args) {
   var doc = DocumentApp.getActiveDocument();
   var cursor = doc.getCursor();
-  if (!cursor) throw new Error('Click in your document where the citation should go, then try again.');
+  if (!cursor) throw new Error('Click where the citation should go, then try again.');
   var inNote = inFootnote_(cursor.getElement());
-  if (args.isNote && !inNote) throw new Error('This style uses footnotes. Add one first (Insert ▸ Footnote, or Ctrl+Alt+F), then click Insert while your cursor is inside it.');
+  if (args.isNote && !inNote) throw new Error('Add a footnote first (Ctrl+Alt+F), then click Insert inside it.');
   var url = PREFIX + encodeURIComponent(JSON.stringify(args.payload));
   var surrounding = cursor.getSurroundingText();
   if (surrounding) {

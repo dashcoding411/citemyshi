@@ -72,7 +72,7 @@ function render() {
         <p>On <b>citemyshi.web.app</b>, open your project’s menu (⋯) and choose <b>Use in Word / Google Docs</b>. Enter the code here:</p>
         <input id="code" class="input" placeholder="K7Q2-M9XD-PL4W" autocomplete="off" spellcheck="false" value="${esc(state.code)}">
         <button class="btn primary" id="connect">Connect</button>
-        <p class="small">This document will remember the project. New sources you add on the website show up here automatically.</p>
+        <p class="small">This document will remember the project.</p>
       </div>`;
     $('#connect').onclick = connect;
     $('#code').onkeydown = e => { if (e.key === 'Enter') connect(); };
@@ -87,8 +87,8 @@ function render() {
     </div>
     <input id="q" class="input" placeholder="Search your sources…" value="${esc(state.q)}">
     <div class="hint small">${state.isNote
-      ? (state.host.supportsFootnotes ? 'Click a source to add a footnote at your cursor.' : 'Put your cursor inside a footnote (Insert ▸ Footnote), then click a source.')
-      : 'Click a source to add an in-text citation at your cursor.'} Add a page or section if you’re quoting.</div>
+      ? (state.host.supportsFootnotes ? 'Click a source to add a footnote.' : 'Click inside a footnote, then click a source.')
+      : 'Click a source to cite it.'} Add a page or section if you’re quoting.</div>
     <div class="list">${items.map(it => {
       const l = label(it);
       const open = state.open === it.id;
