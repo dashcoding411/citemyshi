@@ -155,7 +155,7 @@ async function fetchPage(url) {
 // Citation metadata lives in <head> (plus bylines/JSON-LD near the top of the
 // body), so once the head has arrived we only wait a little longer for the
 // rest — slow sites can take seconds to trickle out the whole page.
-async function readLimited(res, max, { afterHeadMs = 700, afterHeadBytes = 500_000 } = {}) {
+async function readLimited(res, max, { afterHeadMs = 1500, afterHeadBytes = 300_000 } = {}) {
   const reader = res.body.getReader();
   const chunks = [];
   let size = 0, headAt = -1, deadline = Infinity, tail = '';
@@ -739,20 +739,21 @@ async function archivedHtml(url) {
   let res = await safeFetch(`https://web.archive.org/web/${stamp}id_/${cleanUrl(url)}`, { headers: PAGE_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(9000) });
   // The newest copy may itself be the site's "blocked" page; an older one usually isn't
   if (res.status === 403 || res.status === 429 || res.status === 503) res = await safeFetch(`https://web.archive.org/web/2023id_/${cleanUrl(url)}`, { headers: PAGE_HEADERS, redirect: 'follow', signal: AbortSignal.timeout(6000) });
-  if (!res.ok || /pdf/i.test(res.headers.get('content-type') || '')) return null;
+  if (!res.ok) throw new Error(`archive HTTP ${res.status}`);
+  if (/pdf/i.test(res.headers.get('content-type') || '')) throw new Error('archive copy is a PDF');
   let buf = Buffer.from(await res.arrayBuffer());
   if (buf.length > 8_000_000) buf = buf.subarray(0, 8_000_000);
   // Snapshots keep the site's original compression
-  if (buf[0] === 0x1f && buf[1] === 0x8b) { try { buf = zlib.gunzipSync(buf, { finishFlush: zlib.constants.Z_SYNC_FLUSH }); } catch { return null; } }
+  if (buf[0] === 0x1f && buf[1] === 0x8b) buf = zlib.gunzipSync(buf, { finishFlush: zlib.constants.Z_SYNC_FLUSH });
   const html = buf.toString('utf8');
-  return /<title>\s*(Just a moment|Attention Required|Access denied)/i.test(html) ? null : html;
+  if (/<title>\s*(Just a moment|Attention Required|Access denied)/i.test(html)) throw new Error('archive copy is a block page');
+  return html;
 }
 
 async function fromArchive(url) {
   const html = await archivedHtml(url);
-  if (!html) return null;
   const { item, hints } = extractFromHtml(html, url);
-  if (!item.title || /^(just a moment|access denied|attention required|simple page)/i.test(item.title)) return null;
+  if (!item.title || /^(just a moment|access denied|attention required|simple page)/i.test(item.title)) throw new Error('archive copy has no title');
   item.URL = cleanUrl(url);
   return { item, hints };
 }
@@ -805,6 +806,7 @@ export async function citeUrl(inputUrl) {
   const url = inputUrl.trim();
   const host = hostOf(url);
   const warnings = [];
+  const trace = []; // why fallbacks failed (shown with ?debug=1)
 
   // Legislation sites, AustLII, JADE: the page title (when we can read it)
   // plus what the link itself says
@@ -812,7 +814,7 @@ export async function citeUrl(inputUrl) {
     let title = '';
     try { const page = await fetchPage(url); if (page.kind === 'html') title = cheerio.load(page.html)('title').first().text(); } catch {}
     if (!legalFromPage(url, title)?.title) {
-      try { const html = await within(archivedHtml(url), 14000); if (html) title = cheerio.load(html)('title').first().text() || title; } catch {}
+      try { const html = await within(archivedHtml(url), 14000); title = cheerio.load(html)('title').first().text() || title; } catch {}
     }
     const item = legalFromPage(url, title);
     if (item) {
@@ -853,11 +855,11 @@ export async function citeUrl(inputUrl) {
     try {
       const archived = await within(fromArchive(url), 14000);
       if (archived) return { item: archived.item, source: 'Web archive', warnings: [`${hostOf(url)} doesn’t let us read the page directly, so we used the Internet Archive’s copy. Check the date matches the version you read.`] };
-    } catch {}
+    } catch (err) { trace.push(`archive: ${err.message}`); }
     // Blocked, but the link often contains the title (ResearchGate, Academia…): look it up
     const guess = fromUrlOnly(url);
     try { const found = await within(findByTitle(guess.title), 5000); if (found) return { item: found, source: 'DOI' }; } catch {}
-    return { item: guess, source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`] };
+    return { item: guess, source: 'URL', warnings: [`We couldn't open that page (${e.message}), so we guessed from the link. Please check the details.`], trace };
   }
 
   let result;
@@ -865,13 +867,13 @@ export async function citeUrl(inputUrl) {
   else result = extractFromHtml(page.html, page.finalUrl || url);
   let { item, hints } = result;
   if (page.kind === 'html' && !item.title) {
-    try { const archived = await within(fromArchive(url), 14000); if (archived) ({ item, hints } = archived); } catch {}
+    try { const archived = await within(fromArchive(url), 14000); if (archived) ({ item, hints } = archived); } catch (err) { trace.push(`archive: ${err.message}`); }
   }
   if (page.status === 404) {
     try {
       const archived = await within(fromArchive(url), 14000);
       if (archived) return { item: archived.item, source: 'Web archive', warnings: ['That page no longer exists, so we used the Internet Archive’s copy. Check this is the page you read.'] };
-    } catch {}
+    } catch (err) { trace.push(`archive: ${err.message}`); }
     return { item: fromUrlOnly(url), source: 'URL', warnings: ['That page says "not found", so we guessed from the link. Double-check the link and details.'] };
   }
 
@@ -902,5 +904,5 @@ export async function citeUrl(inputUrl) {
     item.title = fromUrlOnly(url).title;
     warnings.push(`We couldn’t read this page’s title, so we guessed “${item.title}” from the link. Please type the real title.`);
   }
-  return { item: prune(item), source, warnings };
+  return { item: prune(item), source, warnings, trace };
 }

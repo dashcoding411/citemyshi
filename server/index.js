@@ -95,9 +95,11 @@ app.get('/api/cite', wrap(async req => {
     if (out.results) out.results = out.results.map(x => ({ ...x, item: tidyItem(x.item) }));
     return out;
   });
+  const { trace, ...out } = r;
+  if (req.query.debug && trace?.length) out.debug = trace;
   // Fresh "accessed" date even when served from cache
-  if (r.item) return { ...r, item: { ...r.item, ...(r.item.accessed ? { accessed: todayParts() } : {}) } };
-  return r;
+  if (out.item) return { ...out, item: { ...out.item, ...(out.item.accessed ? { accessed: todayParts() } : {}) } };
+  return out;
 }));
 
 const todayParts = () => { const t = new Date(); return { 'date-parts': [[t.getFullYear(), t.getMonth() + 1, t.getDate()]] }; };
