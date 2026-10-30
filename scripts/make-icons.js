@@ -1,4 +1,4 @@
-// Draws the citemyshi icon (gradient rounded square with a white quote mark)
+// Draws the citemyshi icon (an ink square with a paper-coloured quote mark)
 // as PNGs for the Word add-in manifest. Run: node scripts/make-icons.js
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -10,7 +10,7 @@ const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(d
 function draw(size) {
   const ss = 4; // supersampling
   const px = Buffer.alloc(size * size * 4);
-  const r = size * 0.22;
+  const r = size * 0.18;
   const inRounded = (x, y) => {
     const cx = Math.min(Math.max(x, r), size - r), cy = Math.min(Math.max(y, r), size - r);
     return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
@@ -30,8 +30,8 @@ function draw(size) {
       const fx = x + (sx + 0.5) / ss, fy = y + (sy + 0.5) / ss;
       if (!inRounded(fx, fy)) continue;
       a++;
-      if (blob(fx, fy, 0.36) || blob(fx, fy, 0.62)) { rr += 255; g += 255; b += 255; }
-      else { const t = (fx + fy) / (2 * size); rr += 59 + (123 - 59) * t; g += 91 + (92 - 91) * t; b += 253 + (255 - 253) * t; }
+      if (blob(fx, fy, 0.36) || blob(fx, fy, 0.62)) { rr += 247; g += 246; b += 242; }
+      else { rr += 27; g += 26; b += 23; }
     }
     const i = (y * size + x) * 4;
     if (a) { px[i] = rr / a; px[i + 1] = g / a; px[i + 2] = b / a; }

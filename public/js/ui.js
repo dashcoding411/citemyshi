@@ -203,12 +203,12 @@ export function download(filename, content, type = 'text/plain') {
 
 // Stable pastel colors for tags/folders
 const TAG_COLORS = [
-  ['#e8f0ff', '#2350c9'], ['#e9f8ee', '#16733a'], ['#fff1e6', '#b2560d'], ['#fbeaf5', '#a3277a'],
-  ['#efeaff', '#5b3fc4'], ['#e6f7f8', '#0d7180'], ['#fff8db', '#8a6a00'], ['#ffecec', '#b42828'],
+  ['', '#b8431f'], ['', '#5f7a4f'], ['', '#3f6d82'], ['', '#c08a2e'],
+  ['', '#7a5a8c'], ['', '#a0623f'], ['', '#2f7a72'], ['', '#8a867d'],
 ];
 const TAG_COLORS_DARK = [
-  ['#1d2a4a', '#9db8ff'], ['#163020', '#7fdca3'], ['#352416', '#f4a868'], ['#35192c', '#f19bd2'],
-  ['#261f45', '#b9a6ff'], ['#122e31', '#79d3de'], ['#332c10', '#ebcd5c'], ['#3a1a1a', '#ff9d9d'],
+  ['', '#e3714d'], ['', '#9cbf8a'], ['', '#7fb0c9'], ['', '#e0b45e'],
+  ['', '#b89acb'], ['', '#d49470'], ['', '#6fbcb2'], ['', '#a29d93'],
 ];
 export function tagColor(name) {
   let h = 0;
@@ -217,4 +217,7 @@ export function tagColor(name) {
   const [bg, fg] = (dark ? TAG_COLORS_DARK : TAG_COLORS)[h % TAG_COLORS.length];
   return `--chip-bg:${bg};--chip-fg:${fg}`;
 }
-export const FOLDER_COLORS = ['#3b5bfd', '#7b5cff', '#e0559b', '#ef6b2f', '#e3a600', '#1fa365', '#0ea5b7', '#64748b'];
+export const FOLDER_COLORS = ['#8a867d', '#b8431f', '#c08a2e', '#5f7a4f', '#3f6d82', '#7a5a8c', '#a0623f', '#46433d'];
+// Folders coloured with the earlier, brighter palette show in the matching muted colour
+const OLD_FOLDER_COLORS = { '#3b5bfd': '#3f6d82', '#7b5cff': '#7a5a8c', '#e0559b': '#a0623f', '#ef6b2f': '#b8431f', '#e3a600': '#c08a2e', '#1fa365': '#5f7a4f', '#0ea5b7': '#3f6d82', '#64748b': '#8a867d' };
+export const folderColor = c => OLD_FOLDER_COLORS[String(c || '').toLowerCase()] || c || 'var(--muted)';

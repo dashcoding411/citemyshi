@@ -11,7 +11,7 @@ function blankProject(name = 'My bibliography', extra = {}) {
 
 function defaults() {
   const p = blankProject('My first bibliography');
-  return { version: 1, folders: [], projects: [p], activeId: p.id, theme: 'system', recentStyles: ['apa', 'modern-language-association', 'chicago-author-date', 'harvard-cite-them-right'], serif: false, deleted: {} };
+  return { version: 1, folders: [], projects: [p], activeId: p.id, theme: 'system', recentStyles: ['apa', 'modern-language-association', 'chicago-author-date', 'harvard-cite-them-right'], deleted: {} };
 }
 
 function load() {

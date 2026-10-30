@@ -66,7 +66,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
       ${source ? `<div class="notice ${warnings.length ? 'warn' : 'ok'}">${icon(warnings.length ? 'alert' : 'check')}<div>${warnings.length ? warnings.map(esc).join('<br>') : `${{ URL: 'Guessed from the link', Webpage: 'Read from the page', PDF: 'Read from the PDF', Manual: 'Entered by hand' }[source] || `Found via <b>${esc(source)}</b>`}. Check the details.`}${source === 'URL' || source === 'Web archive' ? `<br><button class="link" data-open-cite-button style="margin-top:6px">${icon('quote')} Use the Cite button instead</button>` : ''}</div></div>` : ''}
       <div class="preview-box">
         <div class="lbl"><span>Preview · ${esc(p.styleTitle || p.style)}</span><span class="pv-status"></span></div>
-        <div class="csl pv-html ${state.serif ? 'serif' : ''}"><span style="color:var(--muted)">Generating…</span></div>
+        <div class="csl pv-html ${state.citeFont === 'sans' ? 'sans' : ''}"><span style="color:var(--muted)">Generating…</span></div>
         <div class="intext pv-intext"></div>
       </div>
       ${missing.size ? `<div class="notice warn">${icon('alert')}<div>This citation might be missing: <b>${[...missing].map(esc).join(', ')}</b>. Add it if you can find it.</div></div>` : ''}
@@ -284,7 +284,7 @@ export function openEditor({ item = {}, isNew = false, source, warnings = [], pr
       const e = r.entries[0];
       const box = $('.pv-html', m.body);
       if (!box) return;
-      box.className = `csl pv-html ${state.serif ? 'serif' : ''} ${r.params.hangingIndent ? 'hanging' : ''}`;
+      box.className = `csl pv-html ${state.citeFont === 'sans' ? 'sans' : ''} ${r.params.hangingIndent ? 'hanging' : ''}`;
       box.innerHTML = e?.html || '<span style="color:var(--muted)">Fill in some details to see a preview</span>';
       $('.pv-intext', m.body).innerHTML = e?.intext?.paren ? `${r.style.isNote ? 'Footnote' : 'In-text'}: ${e.intext.paren}${e.intext.narrative ? ` &nbsp;·&nbsp; Narrative: ${e.intext.narrative}` : ''}` : '';
       if (status) status.textContent = '';

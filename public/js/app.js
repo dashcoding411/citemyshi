@@ -1,4 +1,4 @@
-import { $, $$, esc, api, warmUp, debounce, toast, openMenu, closeMenu, openModal, confirmDialog, promptDialog, copyRich, download, tagColor, FOLDER_COLORS, topModal } from './ui.js';
+import { $, $$, esc, api, warmUp, debounce, toast, openMenu, closeMenu, openModal, confirmDialog, promptDialog, copyRich, download, tagColor, FOLDER_COLORS, folderColor, topModal } from './ui.js';
 import { icon } from './icons.js';
 import { CITE_TABS, SOURCE_TYPES, sourceTypeFor, missingInfo, checkInfo } from './types.js';
 import * as S from './store.js';
@@ -39,7 +39,7 @@ function renderSidebar() {
       <div class="folder ${f.collapsed && !q ? 'collapsed' : ''}">
         <div class="tree-row" data-folder="${f.id}">
           ${icon('chevronDown', 'chev')}
-          <span class="folder-dot" style="background:${f.color || 'var(--muted)'}"></span>
+          <span class="folder-dot" style="background:${folderColor(f.color)}"></span>
           <span class="name" style="font-weight:600">${esc(f.name)}</span><span class="count">${total}</span>
           <button class="row-menu" data-folder-menu="${f.id}" aria-label="Folder options">${icon('more')}</button>
         </div>
@@ -50,7 +50,7 @@ function renderSidebar() {
   const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
 
   $('#sidebar').innerHTML = `
-    <a class="brand" href="/"><span class="brand-mark">“</span><span>citemyshi<small>free citation generator</small></span></a>
+    <a class="brand" href="/"><span class="wordmark">citemyshi<span class="dot">.</span></span></a>
     <div class="side-actions">
       <button class="btn btn-primary" data-new-project>${icon('plus')} New project</button>
       <button class="btn" data-new-folder title="New folder" aria-label="New folder">${icon('folderPlus')}</button>
@@ -150,7 +150,7 @@ function folderMenu(anchor, id) {
     { label: 'New project in folder', icon: 'plus', onClick: async () => { const n = await promptDialog({ title: 'New project', label: 'Project name', placeholder: 'e.g. Essay 1', confirm: 'Create' }); if (n) S.createProject(n, id); } },
     { label: 'Rename folder', icon: 'pencil', onClick: async () => { const n = await promptDialog({ title: 'Rename folder', label: 'Folder name', value: f.name }); if (n) S.updateFolder(id, { name: n }); } },
     { label: 'Color', heading: true },
-    { html: `<div class="swatches">${FOLDER_COLORS.map(c => `<span class="swatch ${f.color === c ? 'on' : ''}" style="background:${c}" data-c="${c}" role="button" aria-label="Color ${c}"></span>`).join('')}</div>`, onMount: (el, close) => $$('[data-c]', el).forEach(s => s.onclick = () => { S.updateFolder(id, { color: s.dataset.c }); close(); }) },
+    { html: `<div class="swatches">${FOLDER_COLORS.map(c => `<span class="swatch ${folderColor(f.color) === c ? 'on' : ''}" style="background:${c}" data-c="${c}" role="button" aria-label="Color ${c}"></span>`).join('')}</div>`, onMount: (el, close) => $$('[data-c]', el).forEach(s => s.onclick = () => { S.updateFolder(id, { color: s.dataset.c }); close(); }) },
     { sep: true },
     { label: 'Delete folder (keep projects)', icon: 'folder', onClick: () => { const r = S.deleteFolder(id); toast(`Folder deleted. ${r.inside.length} project${r.inside.length === 1 ? '' : 's'} moved out.`); } },
     { label: 'Delete folder and projects', icon: 'trash', danger: true, onClick: async () => {
@@ -170,7 +170,7 @@ function backupMenu(anchor) {
       inp.click();
     } },
     { sep: true },
-    { label: `Citation font: ${state.serif ? 'Serif' : 'Sans'}`, icon: 'type', onClick: () => { state.serif = !state.serif; S.emit({ project: true }); } },
+    { label: `Citation font: ${state.citeFont === 'sans' ? 'Sans' : 'Serif'}`, icon: 'type', onClick: () => { state.citeFont = state.citeFont === 'sans' ? 'serif' : 'sans'; S.emit({ project: true }); } },
   ]);
 }
 
@@ -257,7 +257,7 @@ function renderTopbar() {
     <div class="project-title">
       <input value="${esc(p.name)}" aria-label="Project name" data-project-name maxlength="120">
       <div class="project-sub">
-        ${folder ? `<span class="crumb"><span class="folder-dot" style="background:${folder.color || 'var(--muted)'}"></span>${esc(folder.name)}</span><span>·</span>` : ''}
+        ${folder ? `<span class="crumb"><span class="folder-dot" style="background:${folderColor(folder.color)}"></span>${esc(folder.name)}</span><span>·</span>` : ''}
         ${p.shared ? `<button class="crumb shared-crumb" data-share-open title="Group project">${icon('users')} ${esc(Object.values(p.shared.members || {}).map(x => x.name.split(' ')[0]).slice(0, 4).join(', '))}${Object.keys(p.shared.members || {}).length > 4 ? ` +${Object.keys(p.shared.members).length - 4}` : ''}</button><span>·</span>` : ''}
         <span>${p.items.length} citation${p.items.length === 1 ? '' : 's'}</span>
         <span>·</span>
@@ -733,13 +733,13 @@ function citeHtml(item) {
     <article class="cite ${sel ? 'selected' : ''} ${ui.flash === item.id ? 'flash' : ''}" data-id="${item.id}" draggable="true">
       <label class="check"><input type="checkbox" ${sel ? 'checked' : ''} data-select aria-label="Select citation"></label>
       <div class="cite-body">
-        <div class="csl ${hanging ? 'hanging' : ''} ${state.serif ? 'serif' : ''}">${f?.inBibliography === false
+        <div class="csl ${hanging ? 'hanging' : ''} ${state.citeFont === 'sans' ? 'sans' : ''}">${f?.inBibliography === false
           ? `<div class="intext-only">${icon('info')}<span><b>${ui.fmt.style.isNote ? 'Footnotes only' : 'In-text only'}:</b> ${esc(p.styleTitle || ui.fmt.style.title)} doesn’t put this in the ${esc(headingFor(p.style).toLowerCase())}${/personal_communication|interview/.test(item.type) ? ' (personal communications can’t be looked up by readers)' : ''}. Cite it as <span class="csl" style="font-size:inherit">${f.intext.paren}</span></span></div>`
           : f ? linkify(f.html) : `<span style="color:var(--muted)">${esc(item.title || 'Untitled')}</span>`}</div>
         <div class="cite-meta">
           <span class="type-pill">${icon(t.icon)} ${esc(t.label)}</span>
           ${sourceBadge(item)}
-          ${intext ? `<span class="intext-preview">· ${ui.fmt.style.isNote ? 'Note' : 'In-text'}: ${intext.replace(/<[^>]+>/g, '')}</span>` : ''}
+          ${intext ? `<span class="intext-preview">${ui.fmt.style.isNote ? 'Note' : 'In-text'}: ${intext.replace(/<[^>]+>/g, '')}</span>` : ''}
           ${missing.length ? `<button class="warn-pill" data-edit title="Missing: ${esc(missing.join(', '))}">${icon('alert')} Missing ${esc(missing.slice(0, 2).join(', ').toLowerCase())}${missing.length > 2 ? ` +${missing.length - 2}` : ''}</button>` : ''}
           ${!missing.length && !item._checked && checks.length ? `<button class="warn-pill" data-edit title="${esc(checks.join(' · '))}">${icon('alert')} ${esc(checks[0])}</button>` : ''}
           ${(item._tags || []).map(tg => `<button class="chip" style="${tagColor(tg)}" data-tag-filter="${esc(tg)}">${esc(tg)}</button>`).join('')}
@@ -1128,7 +1128,7 @@ function wireBib() {
     if (ids.length > 1) {
       const ghost = document.createElement('div');
       ghost.textContent = `${ids.length} citations`;
-      ghost.style.cssText = 'position:absolute;top:-100px;padding:6px 12px;background:#3b5bfd;color:#fff;border-radius:8px;font:600 13px Inter,sans-serif';
+      ghost.style.cssText = 'position:absolute;top:-100px;padding:6px 12px;background:#1b1a17;color:#f7f6f2;border-radius:6px;font:500 13px Geist,sans-serif';
       document.body.appendChild(ghost);
       e.dataTransfer.setDragImage(ghost, 10, 10);
       setTimeout(() => ghost.remove(), 0);
